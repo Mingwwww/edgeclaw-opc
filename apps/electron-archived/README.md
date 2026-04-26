@@ -1,4 +1,19 @@
-# EdgeClaw Electron App
+# EdgeClaw Electron App（实验存档 / DEPRECATED）
+
+> **⚠️ 此目录已废弃，请勿用它构建 App。**
+>
+> 这是早期 Electron 打包实验，作为事故复盘材料保留在仓库中。
+>
+> 已知问题：
+> - 用 `process.execPath` 启动 server 子进程会递归 fork `EdgeClaw.app`（缺少 `ELECTRON_RUN_AS_NODE=1`）。
+> - `electron-builder.yml` 把本机 `.env` 打入 bundle，存在密钥泄漏风险。
+> - 使用 `/Users/da/ws/...` 绝对路径作为 `extraResources` 来源，构建不可复现。
+> - 缺少 single-instance lock、健康检查、端口冲突处理。
+>
+> 正式 macOS 分发方案见仓库根目录 [`TODO-MacApp.md`](../../TODO-MacApp.md)。
+> v1 desktop 实现位置：`apps/desktop/`（待建）。
+>
+> 下文部分描述（特别是 sandbox 限制段落）有误，见末尾"勘误"。
 
 将 edgeclaw-test-0422 打包为 macOS App。
 
@@ -119,3 +134,17 @@ rm -rf "$TMP_DMG"
 2. **bun 编译**: 将 `node:sqlite` 替换为 `bun:sqlite`
 3. **外部服务器**: App 连接远程服务器而非本地
 4. **pkg 打包**: 尝试用 pkg 打包服务器为单一可执行文件
+
+## 勘误
+
+本文上方早期描述存在以下错误，正式方案 `TODO-MacApp.md` 已修正：
+
+- **"macOS Sandbox 阻止 Electron app 启动外部二进制"不准确。**
+  真正的限制来自 Hardened Runtime + library validation，而非 App Sandbox（sandbox 默认未启用）。
+  正确做法是配置 `com.apple.security.cs.disable-library-validation` entitlement，
+  或继续用 `process.execPath` + `ELECTRON_RUN_AS_NODE=1` 跑 Electron 内置 Node。
+- **"使用 `process.execPath` 启动服务器" 描述不完整。**
+  实测在 packaged 模式下，`process.execPath` 指向 `EdgeClaw.app/Contents/MacOS/EdgeClaw`，
+  不设置 `env.ELECTRON_RUN_AS_NODE = '1'` 时子进程会再次启动 Electron App，递归 fork，
+  可能耗尽系统资源直到 OOM。
+- **打包内容章节列出的 `.env` 不应包含在分发产物中。** 这是当前实现最严重的安全问题之一。

@@ -14,6 +14,10 @@ build/
 *.log
 .proxy.log
 
+# Electron 实验存档（已废弃，详见 apps/electron-archived/README.md 顶部）
+apps/electron-archived/dist-electron/
+apps/electron-archived/node_modules/
+
 # OS / IDE
 .DS_Store
 .idea/
