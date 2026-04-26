@@ -1,0 +1,30 @@
+{
+  "name": "app-packager",
+  "version": "0.1.0",
+  "description": "Claude Code plugin for packaging Electron apps as macOS App bundles with OTA update support",
+  "author": "EdgeClaw",
+  "entrypoints": {
+    "skills": {
+      "pack": "skills/pack/SKILL.md",
+      "sign": "skills/sign/SKILL.md",
+      "dmg": "skills/dmg/SKILL.md",
+      "verify": "skills/verify/SKILL.md",
+      "release": "skills/release/SKILL.md"
+    },
+    "hooks": {
+      "pre-pack": "hooks/pre-pack.js",
+      "post-dmg": "hooks/post-dmg.js"
+    }
+  },
+  "macos": {
+    "entitlements": "scripts/entitlements.mac.plist",
+    "signing": {
+      "autoDiscovery": true,
+      "fallbackToAdHoc": true
+    }
+  },
+  "ota": {
+    "provider": "github",
+    "updateServer": null
+  }
+}
