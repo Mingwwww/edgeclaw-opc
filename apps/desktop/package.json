@@ -1,0 +1,28 @@
+{
+  "name": "@edgeclaw/desktop",
+  "version": "0.1.0",
+  "description": "EdgeClaw macOS Desktop App (Electron shell + claudecodeui + claude-code-main)",
+  "main": "dist/main.js",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && electron .",
+    "pack": "electron-builder --dir",
+    "release": "bash scripts/release.sh",
+    "release:adhoc": "bash scripts/release.sh --ad-hoc",
+    "release:signed": "bash scripts/release.sh --signed",
+    "verify:dmg": "bash scripts/verify-dmg.sh",
+    "download-node": "bash scripts/download-node.sh",
+    "download-bun": "bash scripts/download-bun.sh"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@electron/notarize": "^3.0.0",
+    "@types/node": "^22.0.0",
+    "electron": "~39.8.6",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.8.3"
+  },
+  "author": "EdgeClaw Contributors"
+}

@@ -1,0 +1,48 @@
+appId: cc.edgeclaw.desktop
+productName: EdgeClaw
+copyright: "Copyright © 2026 EdgeClaw Contributors. AGPL-3.0-or-later."
+
+directories:
+  output: dist-electron
+  buildResources: resources
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: arm64
+  icon: resources/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  minimumSystemVersion: "12.0"
+  darkModeSupport: true
+
+dmg:
+  sign: true
+  artifactName: "EdgeClaw-${version}-arm64.dmg"
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+afterSign: scripts/notarize.js
+
+extraResources:
+  - from: resources/node-bin/
+    to: node-bin/
+  - from: resources/bun-bin/
+    to: bun-bin/
+  - from: resources/claudecodeui-bundle.tar
+    to: claudecodeui-bundle.tar
+  - from: resources/claude-code-main-bundle.tar
+    to: claude-code-main-bundle.tar
+
+files:
+  - "dist/**/*"
+  - "node_modules/**/*"
+  - "package.json"
