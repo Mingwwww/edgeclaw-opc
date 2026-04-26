@@ -1,37 +1,24 @@
-// EdgeClaw App - Test Version
+// EdgeClaw App - Using packaged node_modules
 const { app, BrowserWindow } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const SCRIPT_DIR = __dirname;
-const APP_DIR = path.dirname(SCRIPT_DIR);
-const PROJECT_ROOT = path.dirname(APP_DIR);
-const HTML_PATH = path.join(SCRIPT_DIR, 'index.html');
-
-const BUN_PATHS = [
-  '/Users/da/.bun/bin/bun',
-  '/opt/homebrew/bin/bun',
-  'bun',
-];
-
 let mainWindow;
+let serverProcess;
 
-function findBun() {
-  for (const p of BUN_PATHS) {
-    try {
-      if (p === 'bun') return 'bun';
-      fs.accessSync(p, fs.constants.X_OK);
-      return p;
-    } catch {}
-  }
-  return 'bun';
+function log(msg) {
+  const timestamp = new Date().toISOString();
+  fs.appendFileSync('/tmp/edgeclaw-webui.log', `[${timestamp}] ${msg}\n`);
+  console.log(msg);
 }
 
-function createWindow() {
+function createWindow(serverPort) {
+  log('Creating window');
+
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1400,
+    height: 900,
     title: 'EdgeClaw',
     backgroundColor: '#1e1e1e',
     webPreferences: {
@@ -40,40 +27,110 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(HTML_PATH);
+  const url = `http://localhost:${serverPort}/?uiV2=1`;
+  log('Loading URL: ' + url);
+  mainWindow.loadURL(url);
 
   mainWindow.webContents.on('did-finish-load', () => {
-    testBun();
+    log('Web UI loaded');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    log('Load failed: ' + errorCode + ' - ' + errorDescription);
   });
 }
 
-function testBun() {
-  const bunExe = findBun();
-  mainWindow.webContents.executeJavaScript(`window.appendOutput('Testing Bun at: ${bunExe}\\n', false, true)`);
+function startServer() {
+  // __dirname in packaged app: Contents/Resources/app/src
+  // We need to go up to Contents/Resources: ../../..
+  // Then claudecodeui is at Contents/Resources/claudecodeui
+  const appPath = app.getAppPath();
+  log('App path: ' + appPath);
 
-  // Test 1: bun --version
-  const versionProc = spawn(bunExe, ['--version'], { cwd: PROJECT_ROOT });
-  versionProc.stdout.on('data', (d) => {
-    mainWindow.webContents.executeJavaScript(`window.appendOutput('bun --version: ' + ${JSON.stringify(d.toString())} + '\\n')`);
-  });
-  versionProc.stderr.on('data', (d) => {
-    mainWindow.webContents.executeJavaScript(`window.appendOutput('[stderr] ' + ${JSON.stringify(d.toString())}, true)`);
+  // app.getAppPath() returns the path to the app.asar or the unpacked app
+  // For our structure, we need to find claudecodeui
+  let claudeCodeUI;
+  let distDir;
+
+  if (app.isPackaged) {
+    // In packaged app, extraResources are at Contents/Resources/
+    const resourcesPath = path.join(path.dirname(appPath), '..', 'Resources');
+    claudeCodeUI = path.join(resourcesPath, 'claudecodeui');
+    distDir = path.join(claudeCodeUI, 'dist');
+    log('Packaged mode - Resources: ' + resourcesPath);
+  } else {
+    // Development mode
+    claudeCodeUI = '/Users/da/ws/edgeclaw-test-0422/claudecodeui';
+    distDir = path.join(claudeCodeUI, 'dist');
+    log('Dev mode');
+  }
+
+  log('claudecodeui: ' + claudeCodeUI);
+  log('claudecodeui exists: ' + fs.existsSync(claudeCodeUI));
+
+  if (!fs.existsSync(claudeCodeUI)) {
+    log('ERROR: claudecodeui not found');
+    return;
+  }
+
+  const nodePath = process.execPath;
+  log('Using Node: ' + nodePath);
+
+  const env = {
+    ...process.env,
+    NODE_ENV: 'development',
+    HOST: '127.0.0.1',
+    SERVER_PORT: '3001'
+  };
+
+  log('Starting server...');
+  serverProcess = spawn(nodePath, ['server/index.js'], {
+    cwd: claudeCodeUI,
+    env,
+    stdio: ['pipe', 'pipe', 'pipe']
   });
 
-  // Test 2: run a simple script
-  mainWindow.webContents.executeJavaScript(`window.appendOutput('\\nRunning test script...\\n', false, true)`);
-  const testProc = spawn(bunExe, ['-e', 'console.log("Hello from Bun!"); console.log("CWD:", process.cwd());'], { cwd: PROJECT_ROOT });
-  testProc.stdout.on('data', (d) => {
-    mainWindow.webContents.executeJavaScript(`window.appendOutput(${JSON.stringify(d.toString())})`);
+  let serverReady = false;
+
+  serverProcess.stdout.on('data', (data) => {
+    const text = data.toString();
+    log('[SERVER] ' + text.trim());
+    if (!serverReady && (text.includes('listening') || text.includes('Server running') || text.includes('started'))) {
+      serverReady = true;
+      log('Server ready, creating window...');
+      setTimeout(() => createWindow(3001), 2000);
+    }
   });
-  testProc.stderr.on('data', (d) => {
-    mainWindow.webContents.executeJavaScript(`window.appendOutput(${JSON.stringify(d.toString())}, true)`);
+
+  serverProcess.stderr.on('data', (data) => {
+    const text = data.toString();
+    log('[SERVER ERR] ' + text.trim());
   });
-  testProc.on('close', (code) => {
-    mainWindow.webContents.executeJavaScript(`window.appendOutput('\\n[Test script exited with code ' + ${code} + ']\\n', false, true)`);
+
+  serverProcess.on('close', (code) => {
+    log('[SERVER] Exit code: ' + code);
   });
+
+  serverProcess.on('error', (err) => {
+    log('[SERVER ERROR] ' + err.message);
+  });
+
+  setTimeout(() => {
+    if (!serverReady) {
+      log('Server startup timeout');
+      createWindow(3001);
+    }
+  }, 30000);
 }
 
-app.whenReady().then(createWindow);
-app.on('window-all-closed', () => app.quit());
-app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+log('App starting, isPackaged: ' + app.isPackaged);
+startServer();
+
+app.on('window-all-closed', () => {
+  if (serverProcess) serverProcess.kill();
+  app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) startServer();
+});

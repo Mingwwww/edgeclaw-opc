@@ -1,0 +1,40 @@
+appId: com.edgeclaw.app
+productName: EdgeClaw
+copyright: Copyright © 2024 EdgeClaw
+
+directories:
+  output: dist-electron
+  buildResources: resources
+
+files:
+  - src/**
+  - package.json
+
+extraResources:
+  - from: /Users/da/ws/edgeclaw-test-0422/claude-code-main
+    to: claude-code-main
+  - from: /Users/da/ws/edgeclaw-test-0422/claudecodeui/dist
+    to: claudecodeui/dist
+  - from: /Users/da/ws/edgeclaw-test-0422/claudecodeui/server
+    to: claudecodeui/server
+  - from: /Users/da/ws/edgeclaw-test-0422/claudecodeui/node_modules
+    to: claudecodeui/node_modules
+  - from: /Users/da/ws/edgeclaw-test-0422/edgeclaw-memory-core
+    to: edgeclaw-memory-core
+  - from: /Users/da/ws/edgeclaw-test-0422/config
+    to: config
+  - from: /Users/da/ws/edgeclaw-test-0422/.env
+    to: .env
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+  hardenedRuntime: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+
+asar: true
+compression: maximum
+
+publish: null
