@@ -304,28 +304,31 @@ console.log('[plan-c smoke] init commands:',
 
 ### 6.4 双触发回归脚本（C1 → C2 验证）
 
-C1 落地后（保留 Solution A），跑：
+> 这一节有可复现脚本：`claudecodeui/server/__plan-c-bench.mjs`。它跑通完整 webui WS 协议（1 prompt → 自动批准 Bash → 等 Stop），同时统计 `~/.turnkey/inbox.jsonl` 的两个指标：
+>
+> - **inboxDelta**：裸 `wc -l` 增量（受 hooks.json 中每事件多 command 影响，不能直接判双触发）。
+> - **captureByEvent**：只数 `turnkey-capture.js` 写出的行（schema 含 `payload` 键，与 budget 行区分），按 `event` 名分桶。**这是真正能区分单/双触发的指标。**
+>
+> 用法：
+>
+> ```bash
+> # 1) 起源码 server (DISABLE_LOCAL_AUTH 默认 true 即可)
+> cd claudecodeui && DEBUG_CLAUDE_AGENT_SDK=1 npm run server &
+>
+> # 2) 跑 bench
+> node claudecodeui/server/__plan-c-bench.mjs
+> ```
 
-```bash
-# 清空状态
-: > ~/.turnkey/inbox.jsonl
+#### 实测结果（2026-04-27, branch `feat/turnkey-plugin-native-loading`）
 
-# webui 发起 1 次 prompt 并完成（约 1-2 个 PostToolUse + 1 个 Stop）
-# 完成后统计：
-wc -l ~/.turnkey/inbox.jsonl
-# 期望：2 × N（N = 实际事件数）— 双触发证据
-```
+| Commit | sha | captureByEvent | inboxDelta | verdict |
+| ---- | ---- | ---- | ---- | ---- |
+| C1 (`Solution A` + `--plugin-dir` 同时存在) | `25f7ee7` | `{ UserPromptSubmit: 2, PostToolUse: 2, Stop: 2 }` | 10 | DOUBLE_TRIGGER |
+| C3 (`Solution A` 已拆，仅 `--plugin-dir`) | `ae06fc4` | `{ UserPromptSubmit: 1, PostToolUse: 1, Stop: 1 }` | 5 | SINGLE_TRIGGER |
 
-C2 落地后（拆 Solution A），相同流程：
+> 比例正好 2:1，与 §2.3 推断一致。`inboxDelta=5`（C3 单触发基线）= 1 × UserPromptSubmit + 2 × PostToolUse + 2 × Stop —— 因为 `hooks.json` 给 `PostToolUse` 和 `Stop` 各注册了多条 command，单事件会触发 capture+budget 多个 hook 脚本，这在两侧都会发生，不影响双触发判定。
 
-```bash
-: > ~/.turnkey/inbox.jsonl
-# 重发同一条 prompt
-wc -l ~/.turnkey/inbox.jsonl
-# 期望：N — 单触发，与 Plan A 时代相同
-```
-
-把 C1 / C2 的 `wc -l` 输出附在 PR description 里。
+把这张表 + bench 输出原文附在 PR description 里即可。
 
 ### 6.5 自动化（可选，建议加）
 
