@@ -31,11 +31,7 @@ import {
   drainSessionCronNotifications,
   registerCronSession
 } from './services/cron-session-bridge.js';
-import {
-  loadPluginHooksFromDir,
-  mergeHookMaps,
-  resolveTurnkeyPluginRoot
-} from './plugin-hooks.js';
+import { resolveTurnkeyPluginRoot } from './plugin-hooks.js';
 
 const activeSessions = new Map();
 const sessionRuntimes = new Map();
@@ -796,55 +792,27 @@ async function queryClaudeSDK(command, options = {}, ws) {
       }]
     };
 
+    // Plan C: turnkey plugin 由 CLI 子进程自己加载（commands / skills / hooks），
+    // SDK 主进程只保留 webui 自己的 Notification hook。详见 TODO-PluginSlashFix-PlanC.md §3.1。
     let turnkeyPluginRoot = null;
-    let pluginHookMap = {};
     try {
       turnkeyPluginRoot = await resolveTurnkeyPluginRoot(options.cwd || process.cwd());
       if (turnkeyPluginRoot) {
-        pluginHookMap = await loadPluginHooksFromDir(turnkeyPluginRoot);
-        const eventSummary = Object.fromEntries(
-          Object.entries(pluginHookMap).map(([event, matchers]) => [
-            event,
-            matchers.reduce((sum, m) => sum + (m.hooks?.length || 0), 0)
-          ])
-        );
-        if (Object.keys(eventSummary).length > 0) {
-          console.log('[plugin-hooks] turnkey plugin hooks registered', {
-            pluginRoot: turnkeyPluginRoot,
-            counts: eventSummary
-          });
-        }
+        console.log('[plugin] turnkey plugin will be loaded by CLI via --plugin-dir', {
+          pluginRoot: turnkeyPluginRoot
+        });
       }
     } catch (pluginErr) {
-      console.warn('[plugin-hooks] failed to load turnkey hooks (non-fatal):', pluginErr?.message || pluginErr);
+      console.warn('[plugin] failed to resolve turnkey plugin root (non-fatal):', pluginErr?.message || pluginErr);
     }
 
-    sdkOptions.hooks = mergeHookMaps(builtInHookMap, pluginHookMap);
+    sdkOptions.hooks = builtInHookMap;
 
-    // Plan C C1: 同时通过 SDK options.plugins 把 turnkey plugin 注册到 CLI 子进程，
-    // 让 CLI 自己加载 commands / skills / hooks。Solution A 在 C1 暂留作为 §6.4 双触发
-    // 对照基线，C2 commit 会按 PlanC §4.1 拆掉 Solution A 回到单触发。
     if (turnkeyPluginRoot) {
       sdkOptions.plugins = [
         ...(sdkOptions.plugins || []),
         { type: 'local', path: turnkeyPluginRoot }
       ];
-      console.log('[plan-c] turnkey plugin registered via sdkOptions.plugins', {
-        pluginRoot: turnkeyPluginRoot
-      });
-    }
-
-    if (process.env.PLUGIN_HOOKS_DEBUG === '1') {
-      const dump = Object.fromEntries(
-        Object.entries(sdkOptions.hooks).map(([event, matchers]) => [
-          event,
-          matchers.map(m => ({
-            matcher: m.matcher ?? '<none>',
-            hookCount: m.hooks?.length || 0
-          }))
-        ])
-      );
-      console.log('[plugin-hooks] sdkOptions.hooks shape', dump);
     }
 
     sdkOptions.canUseTool = async (toolName, input, context) => {
