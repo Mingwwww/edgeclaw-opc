@@ -41,8 +41,11 @@ extraResources:
     to: claudecodeui-bundle.tar
   - from: resources/claude-code-main-bundle.tar
     to: claude-code-main-bundle.tar
+  - from: resources/edgeclaw-memory-core-bundle.tar
+    to: edgeclaw-memory-core-bundle.tar
 
 files:
   - "dist/**/*"
+  - "onboarding/**/*"
   - "node_modules/**/*"
   - "package.json"

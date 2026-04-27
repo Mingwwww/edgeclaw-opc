@@ -29,9 +29,11 @@ BUN_BIN="${RESOURCES}/bun-bin/bun"
 
 CLAUDECODEUI_DIR="${REPO_ROOT}/claudecodeui"
 CLAUDE_CODE_MAIN_DIR="${REPO_ROOT}/claude-code-main"
+MEMORY_CORE_DIR="${REPO_ROOT}/edgeclaw-memory-core"
 
 CCUI_BUNDLE="${RESOURCES}/claudecodeui-bundle.tar"
 CCM_BUNDLE="${RESOURCES}/claude-code-main-bundle.tar"
+MEM_BUNDLE="${RESOURCES}/edgeclaw-memory-core-bundle.tar"
 
 # ─────────────── Args ───────────────
 MODE="auto"
@@ -108,7 +110,10 @@ ok "Entitlements: $(basename "$ENTITLEMENTS")"
 
 [[ -d "$CLAUDECODEUI_DIR" ]] || fail "Missing claudecodeui at ${CLAUDECODEUI_DIR}"
 [[ -d "$CLAUDE_CODE_MAIN_DIR" ]] || fail "Missing claude-code-main at ${CLAUDE_CODE_MAIN_DIR}"
-ok "Source trees present (claudecodeui + claude-code-main)"
+[[ -d "$MEMORY_CORE_DIR" ]] || fail "Missing edgeclaw-memory-core at ${MEMORY_CORE_DIR}"
+[[ -f "${MEMORY_CORE_DIR}/lib/index.js" ]] \
+  || fail "edgeclaw-memory-core/lib/index.js missing — run: (cd ${MEMORY_CORE_DIR} && npm run build)"
+ok "Source trees present (claudecodeui + claude-code-main + edgeclaw-memory-core)"
 
 # Bundled Node binary
 if [[ ! -x "$NODE_BIN" ]]; then
@@ -147,6 +152,15 @@ step "Sign native binaries (signed mode only)"
 
 if [[ "$MODE" == "signed" ]]; then
   sign_count=0; sign_fail=0
+  # Sign all macOS-targeted binaries inside the source trees BEFORE we tar them.
+  # Apple notarization recursively scans archives (including .tar bundles), so any
+  # unsigned Mach-O binary inside the .tar will fail the notary check.
+  # Cover:
+  #  - native node addons:  *.node, *.dylib, *.so, *.bare, spawn-helper
+  #  - vendored ripgrep:    rg under any *darwin* path
+  #    (matches arm64-darwin/, x64-darwin/, aarch64-apple-darwin/)
+  # Search roots include claude-code-main/src/ because some packages vendor
+  # binaries outside node_modules (e.g. src/utils/vendor/ripgrep/arm64-darwin/rg).
   while IFS= read -r -d '' f; do
     if codesign --force --sign "$IDENTITY" --timestamp --options runtime \
          --entitlements "$ENTITLEMENTS" "$f" >/dev/null 2>&1; then
@@ -157,9 +171,11 @@ if [[ "$MODE" == "signed" ]]; then
   done < <(find \
     "${CLAUDECODEUI_DIR}/node_modules" \
     "${CLAUDE_CODE_MAIN_DIR}/node_modules" \
+    "${CLAUDE_CODE_MAIN_DIR}/src" \
     -type f \
     \( -name "*.node" -o -name "*.dylib" -o -name "*.so" \
-       -o -name "*.bare" -o -name "spawn-helper" \) -print0 2>/dev/null)
+       -o -name "*.bare" -o -name "spawn-helper" \
+       -o \( -name "rg" -path "*darwin*" \) \) -print0 2>/dev/null)
 
   codesign --force --sign "$IDENTITY" --timestamp --options runtime \
     --entitlements "$ENTITLEMENTS" "$NODE_BIN" >/dev/null 2>&1 \
@@ -178,8 +194,11 @@ fi
 step "Create bundles (claudecodeui + claude-code-main)"
 # ============================================================================
 
-# Common exclusions trim ~70% off node_modules size without breaking runtime.
-COMMON_EXCLUDES=(
+# NODE_MODULES_EXCLUDES: aggressively trim node_modules — these dirs/files are
+# never imported at runtime, so safe to drop. Patterns are scoped to node_modules
+# to avoid breaking source trees that DO ship .md / examples (e.g. claude-code-main
+# bundles skill .md files via Bun text imports → see src/skills/bundled/*Content.ts).
+NODE_MODULES_EXCLUDES=(
   --exclude='*.map'
   --exclude='node_modules/.cache'
   --exclude='node_modules/.bin'
@@ -200,17 +219,21 @@ COMMON_EXCLUDES=(
   --exclude='node_modules/@eslint'
   --exclude='node_modules/vite'
   --exclude='node_modules/@vitejs'
-  --exclude='**/examples'
-  --exclude='**/test'
-  --exclude='**/tests'
-  --exclude='**/__tests__'
-  --exclude='**/*.md'
+  --exclude='node_modules/**/examples'
+  --exclude='node_modules/**/test'
+  --exclude='node_modules/**/tests'
+  --exclude='node_modules/**/__tests__'
+  --exclude='node_modules/**/*.md'
 )
 
 # claudecodeui bundle: server/, dist/, shared/, scripts/, package.json, node_modules
+# Note: claudecodeui server source is JS, no runtime .md imports → safe to also
+# strip top-level test/__tests__ dirs.
 rm -f "$CCUI_BUNDLE"
 (cd "$CLAUDECODEUI_DIR" && tar cf "$CCUI_BUNDLE" \
-  "${COMMON_EXCLUDES[@]}" \
+  "${NODE_MODULES_EXCLUDES[@]}" \
+  --exclude='**/__tests__' \
+  --exclude='**/*.test.js' \
   package.json server/ shared/ dist/ scripts/ node_modules/) \
   || fail "claudecodeui tar creation failed"
 CCUI_MB=$(du -sm "$CCUI_BUNDLE" | awk '{print $1}')
@@ -218,15 +241,28 @@ ok "claudecodeui bundle: ${CCUI_MB}MB → $(basename "$CCUI_BUNDLE")"
 
 # claude-code-main bundle: src/, gateway/, preload.ts, proxy.ts, router.ts,
 # package.json, bunfig.toml, edgeclaw-config.ts, scripts/, node_modules
+# IMPORTANT: do NOT strip src/**/*.md or src/**/examples — many bundled skills
+# (verify/, claudeApi/, etc.) inline .md files via `import md from './*.md'`
+# at runtime through Bun's text loader (see src/skills/bundled/*Content.ts).
 rm -f "$CCM_BUNDLE"
 (cd "$CLAUDE_CODE_MAIN_DIR" && tar cf "$CCM_BUNDLE" \
-  "${COMMON_EXCLUDES[@]}" \
+  "${NODE_MODULES_EXCLUDES[@]}" \
   package.json bunfig.toml \
   $(ls preload.ts proxy.ts router.ts edgeclaw-config.ts tsconfig.json 2>/dev/null) \
   src/ gateway/ scripts/ node_modules/) \
   || fail "claude-code-main tar creation failed"
 CCM_MB=$(du -sm "$CCM_BUNDLE" | awk '{print $1}')
 ok "claude-code-main bundle: ${CCM_MB}MB → $(basename "$CCM_BUNDLE")"
+
+# edgeclaw-memory-core bundle: package.json + lib/ (prebuilt JS)
+# 注意：claudecodeui/server 和 claude-code-main 都通过 ../../../edgeclaw-memory-core 找它
+rm -f "$MEM_BUNDLE"
+(cd "$MEMORY_CORE_DIR" && tar cf "$MEM_BUNDLE" \
+  --exclude='*.map' --exclude='**/*.md' \
+  package.json lib/) \
+  || fail "edgeclaw-memory-core tar creation failed"
+MEM_MB=$(du -sm "$MEM_BUNDLE" | awk '{print $1}')
+ok "edgeclaw-memory-core bundle: ${MEM_MB}MB → $(basename "$MEM_BUNDLE")"
 
 # ============================================================================
 step "Compile TypeScript + electron-builder (--dir)"

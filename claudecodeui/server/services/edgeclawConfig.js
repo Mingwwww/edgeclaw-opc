@@ -488,12 +488,15 @@ export function buildRuntimeEnv(config) {
   const main = resolveModel(normalized, normalized.agents.main.model, { allowMissing: true });
   const runtime = normalized.runtime;
   const proxyPort = String(runtime.proxyPort ?? 18080);
+  // For runtime infrastructure fields (port/host), the host process (e.g. desktop
+  // ServerManager) may have pre-allocated a free port via env vars. Respect those
+  // when set; otherwise fall back to YAML config; otherwise built-in defaults.
   const env = {
-    EDGECLAW_PROXY_PORT: proxyPort,
-    PROXY_PORT: proxyPort,
-    SERVER_PORT: String(runtime.serverPort ?? 3001),
-    VITE_PORT: String(runtime.vitePort ?? 5173),
-    HOST: String(runtime.host ?? '0.0.0.0'),
+    EDGECLAW_PROXY_PORT: process.env.EDGECLAW_PROXY_PORT || proxyPort,
+    PROXY_PORT: process.env.PROXY_PORT || proxyPort,
+    SERVER_PORT: process.env.SERVER_PORT || String(runtime.serverPort ?? 3001),
+    VITE_PORT: process.env.VITE_PORT || String(runtime.vitePort ?? 5173),
+    HOST: process.env.HOST || String(runtime.host ?? '0.0.0.0'),
     CONTEXT_WINDOW: String(runtime.contextWindow ?? 160000),
     VITE_CONTEXT_WINDOW: String(runtime.contextWindow ?? 160000),
     API_TIMEOUT_MS: String(runtime.apiTimeoutMs ?? 120000),

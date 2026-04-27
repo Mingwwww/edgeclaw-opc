@@ -4,9 +4,11 @@
  * Adapted from OpenClaw's GatewayManager (apps/electron/src/gateway-manager.ts).
  * Key differences:
  *   - Spawns `node-bin/node claudecodeui/server/index.js` (instead of entry.js gateway)
- *   - Two tarballs to extract:
- *       Resources/claudecodeui-bundle.tar      → Resources/claudecodeui/
- *       Resources/claude-code-main-bundle.tar  → Resources/claude-code-main/
+ *   - Three tarballs to extract (claudecodeui/server resolves edgeclaw-memory-core
+ *     via `../../../edgeclaw-memory-core/lib/index.js`, so all three must be siblings):
+ *       Resources/claudecodeui-bundle.tar         → Resources/claudecodeui/
+ *       Resources/claude-code-main-bundle.tar     → Resources/claude-code-main/
+ *       Resources/edgeclaw-memory-core-bundle.tar → Resources/edgeclaw-memory-core/
  *   - Sets BUN_BIN, CLAUDE_CODE_MAIN_DIR so the server can spawn `bun` subprocesses
  *   - claudecodeui /health responds with `{status: "ok", ...}` (not `{ok: true}`)
  */
@@ -67,6 +69,28 @@ async function pickAvailablePort(): Promise<number> {
   throw new Error(
     `No free desktop server port in range ${DEFAULT_PORT_START}-${DEFAULT_PORT_END}`,
   );
+}
+
+function getServerLogPath(): string {
+  return path.join(os.homedir(), ".edgeclaw", "desktop.server.log");
+}
+
+function readTailSafe(filePath: string, maxBytes: number): string {
+  try {
+    const stat = fsSync.statSync(filePath);
+    const fd = fsSync.openSync(filePath, "r");
+    try {
+      const start = Math.max(0, stat.size - maxBytes);
+      const len = stat.size - start;
+      const buf = Buffer.alloc(len);
+      fsSync.readSync(fd, buf, 0, len, start);
+      return buf.toString("utf8");
+    } finally {
+      fsSync.closeSync(fd);
+    }
+  } catch {
+    return "(no log)";
+  }
 }
 
 async function readPidFile(): Promise<number | null> {
@@ -257,6 +281,13 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
         "ServerManager: process.resourcesPath unavailable; pass dev/devRepoRoot or run under Electron",
       );
     }
+    // Order matters only for clarity; resolution at runtime is via ../../../ path
+    // walks so all three must end up as siblings inside `resources/`.
+    this.ensureBundleExtracted(
+      resources,
+      "edgeclaw-memory-core-bundle.tar",
+      "edgeclaw-memory-core",
+    );
     const claudeCodeUiDir = this.ensureBundleExtracted(
       resources,
       "claudecodeui-bundle.tar",
@@ -352,6 +383,12 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     await cleanupStaleOrOrphanPid();
 
     const chosenPort = await pickAvailablePort();
+    // NOTE: proxy port is intentionally NOT overridden here. claudecodeui
+    // spawns proxy.ts as a subprocess (in claude-code-main) which loads its
+    // own config from ~/.edgeclaw/config.yaml. If we set EDGECLAW_PROXY_PORT
+    // here, the parent server waits on the new port but the spawned proxy.ts
+    // still binds runtime.proxyPort from yaml → mismatch. Leave proxy port
+    // to YAML so parent + child agree.
     const { nodeBin, bunBin, serverEntry, serverCwd, claudeCodeMainDir } =
       this.resolvePaths();
 
@@ -367,6 +404,9 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
       NO_COLOR: "1",
       FORCE_COLOR: "0",
       SERVER_PORT: String(chosenPort),
+      // Force loopback regardless of what runtime.host says in YAML.
+      // claudecodeui's buildRuntimeEnv now respects pre-set env vars.
+      HOST: "127.0.0.1",
       // Ensure spawned `bun` subprocess (claude-code-main cli.tsx) finds the bundled bun
       BUN_BIN: bunBin,
       // Tell claudecodeui where claude-code-main lives
@@ -377,14 +417,32 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
       }`,
     };
 
+    // Mirror server stdout/stderr to ~/.edgeclaw/desktop.server.log so failures
+    // are diagnosable even when the user launches via Finder/Dock (no terminal).
+    await ensureEdgeClawDir();
+    const logPath = getServerLogPath();
+    const logStream = fsSync.createWriteStream(logPath, { flags: "a" });
+    logStream.write(
+      `\n=== ${new Date().toISOString()} spawn ${serverEntry} (port=${chosenPort}) ===\n`,
+    );
+
     const child = spawn(nodeBin, [serverEntry], {
-      stdio: ["ignore", "inherit", "inherit"],
+      stdio: ["ignore", "pipe", "pipe"],
       cwd: serverCwd,
       env,
       windowsHide: true,
     });
 
-    if (!child.pid) throw new Error("Failed to spawn server process");
+    if (!child.pid) {
+      logStream.end();
+      throw new Error("Failed to spawn server process");
+    }
+
+    child.stdout?.pipe(logStream, { end: false });
+    child.stderr?.pipe(logStream, { end: false });
+    child.once("exit", () => {
+      logStream.end();
+    });
 
     this.child = child;
     this.exitHandlerBound = false;
@@ -400,7 +458,10 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
       await this.removePidFile();
       this.child = null;
       this.stopRequested = false;
-      throw err;
+      const tail = readTailSafe(logPath, 4000);
+      throw new Error(
+        `${err instanceof Error ? err.message : String(err)}\n--- server log tail (${logPath}) ---\n${tail}`,
+      );
     }
 
     return { port: chosenPort };

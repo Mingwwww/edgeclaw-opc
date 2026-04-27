@@ -5,5 +5,6 @@ resources/node-bin/
 resources/bun-bin/
 resources/claudecodeui-bundle.tar
 resources/claude-code-main-bundle.tar
+resources/edgeclaw-memory-core-bundle.tar
 *.log
 .DS_Store

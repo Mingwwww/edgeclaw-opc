@@ -3,7 +3,9 @@
  *
  * Lifecycle:
  *   1. Single-instance lock
- *   2. Check ~/.edgeclaw/config.yaml exists; if not, show onboarding dialog
+ *   2. Check ~/.edgeclaw/config.yaml exists; if not, show onboarding window
+ *      (small BrowserWindow with onboarding/onboarding.html). User submits
+ *      API credentials → main writes config.yaml → onboarding window closes.
  *   3. Start ServerManager (spawns claudecodeui server on bundled Node)
  *   4. Wait for /health, then load http://127.0.0.1:<port>/ in BrowserWindow
  */
@@ -12,6 +14,7 @@ import { BrowserWindow, Menu, app, dialog, ipcMain, shell } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { showOnboardingWindow } from "./onboarding-window";
 import { ServerManager } from "./server-manager";
 
 app.setName("EdgeClaw");
@@ -77,25 +80,35 @@ function setupAppMenu(): void {
   );
 }
 
-function checkConfigOrShowOnboarding(): boolean {
+function resolveOnboardingHtmlPath(): string {
+  // Compiled main lives at <root>/dist/main.js, while onboarding/ sits at
+  // the project root (<root>/onboarding/onboarding.html). In the packaged
+  // app electron-builder mirrors the same layout inside app.asar.
+  return path.join(__dirname, "..", "onboarding", "onboarding.html");
+}
+
+async function ensureConfigOrOnboard(): Promise<boolean> {
   if (fs.existsSync(configPath)) return true;
 
-  // claudecodeui's load-env.js will throw if EDGECLAW_API_KEY etc. are missing,
-  // so we surface the issue here with a clear message before we even try to start.
-  void dialog.showMessageBox({
-    type: "info",
-    title: "EdgeClaw 首次启动",
-    message: "需要配置 API 凭证后才能启动。",
-    detail:
-      `请在以下路径创建配置文件：\n\n${configPath}\n\n` +
-      `示例内容：\n\n` +
-      `EDGECLAW_API_BASE_URL: https://api.anthropic.com\n` +
-      `EDGECLAW_API_KEY: sk-ant-...\n` +
-      `EDGECLAW_MODEL: claude-sonnet-4-5-20250929\n\n` +
-      `保存后重新启动 EdgeClaw。`,
-    buttons: ["退出"],
+  const htmlPath = resolveOnboardingHtmlPath();
+  if (!fs.existsSync(htmlPath)) {
+    // Defensive fallback: shouldn't happen in a correctly built app, but if
+    // it does we still need to tell the user *something* before quitting.
+    await dialog.showMessageBox({
+      type: "error",
+      title: "EdgeClaw",
+      message: "Onboarding 资源缺失",
+      detail: `未找到 onboarding HTML：\n${htmlPath}`,
+      buttons: ["退出"],
+    });
+    return false;
+  }
+
+  const result = await showOnboardingWindow({
+    preloadPath: path.join(__dirname, "preload.js"),
+    htmlPath,
   });
-  return false;
+  return result === "saved";
 }
 
 function registerIpcHandlers(): void {
@@ -124,7 +137,7 @@ function createMainWindow(port: number): BrowserWindow {
     },
   });
 
-  void win.loadURL(`http://127.0.0.1:${port}/`);
+  void win.loadURL(`http://127.0.0.1:${port}/?uiV2=1`);
 
   win.on("close", (e) => {
     if (!isQuitting) {
@@ -168,7 +181,8 @@ if (!gotLock) {
     setupAppMenu();
     registerIpcHandlers();
 
-    if (!checkConfigOrShowOnboarding()) {
+    const configured = await ensureConfigOrOnboard();
+    if (!configured) {
       app.quit();
       return;
     }
@@ -192,7 +206,7 @@ if (!gotLock) {
 
     serverManager.on("ready", (p) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        void mainWindow.loadURL(`http://127.0.0.1:${p}/`);
+        void mainWindow.loadURL(`http://127.0.0.1:${p}/?uiV2=1`);
       }
     });
 

@@ -27,3 +27,7 @@ apps/electron-archived/node_modules/
 claude
 bun.lock
 test-results/
+
+# codesign rewrites these in-place during release.sh signing step
+# (we do not vendor codesigned binaries; the unsigned originals come from npm install)
+claude-code-main/src/utils/vendor/ripgrep/*-darwin/rg

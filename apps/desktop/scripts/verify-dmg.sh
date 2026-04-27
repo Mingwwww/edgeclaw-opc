@@ -91,6 +91,8 @@ RES="$APP/Contents/Resources"
                                         || fail "claudecodeui-bundle.tar missing"
 [[ -f "$RES/claude-code-main-bundle.tar" ]] && pass "claude-code-main-bundle.tar present ($(du -sh "$RES/claude-code-main-bundle.tar" | awk '{print $1}'))" \
                                         || fail "claude-code-main-bundle.tar missing"
+[[ -f "$RES/edgeclaw-memory-core-bundle.tar" ]] && pass "edgeclaw-memory-core-bundle.tar present ($(du -sh "$RES/edgeclaw-memory-core-bundle.tar" | awk '{print $1}'))" \
+                                        || fail "edgeclaw-memory-core-bundle.tar missing"
 
 # ─────────────── Code signature ───────────────
 hdr "4. Code signature"
@@ -178,19 +180,51 @@ fi
 [[ -f "$CCM_DIR/preload.ts" ]] && pass "preload.ts present" \
   || warn "preload.ts missing"
 
+MEM_DIR="$SANDBOX/edgeclaw-memory-core"
+mkdir -p "$MEM_DIR"
+if tar xf "$RES/edgeclaw-memory-core-bundle.tar" -C "$MEM_DIR" 2>/tmp/edgeclaw-vrf-tar3.log; then
+  pass "edgeclaw-memory-core-bundle.tar extracted ($(du -sh "$MEM_DIR" | awk '{print $1}'))"
+else
+  fail "edgeclaw-memory-core tar extract failed:"; cat /tmp/edgeclaw-vrf-tar3.log
+  exit 1
+fi
+
+[[ -f "$MEM_DIR/lib/index.js" ]] && pass "edgeclaw-memory-core/lib/index.js present" \
+  || fail "edgeclaw-memory-core/lib/index.js missing"
+
 # ─────────────── claudecodeui server smoke test ───────────────
 hdr "6. claudecodeui server smoke test"
 
-# Need a config file to satisfy assertRequiredEdgeClawEnv()
+PORT="$(node -e 'const s=require("net").createServer();s.listen(0,()=>{console.log(s.address().port);s.close();});' 2>/dev/null || echo 28790)"
+
+# Need a structured config file to satisfy assertRequiredEdgeClawEnv()
+# Schema: models.providers.<id>.{baseUrl,apiKey}, models.entries.<id>.{provider,name}, agents.main.model
+# Bake the dynamic SERVER_PORT into runtime.serverPort because applyConfigToProcessEnv
+# overrides whatever env was set when claudecodeui boots.
 mkdir -p "$SANDBOX/home/.edgeclaw"
 cat > "$SANDBOX/home/.edgeclaw/config.yaml" <<EOF
-EDGECLAW_API_BASE_URL: https://api.anthropic.com
-EDGECLAW_API_KEY: smoke-test-not-real
-EDGECLAW_MODEL: claude-sonnet-4-5-20250929
+version: 1
+runtime:
+  host: 127.0.0.1
+  serverPort: ${PORT}
+  vitePort: 0
+models:
+  providers:
+    edgeclaw:
+      type: anthropic
+      baseUrl: https://api.anthropic.com
+      apiKey: smoke-test-not-real
+  entries:
+    default:
+      provider: edgeclaw
+      name: claude-sonnet-4-5-20250929
+agents:
+  main:
+    model: default
+memory:
+  enabled: false
 EOF
-pass "Stub config.yaml created"
-
-PORT="$(node -e 'const s=require("net").createServer();s.listen(0,()=>{console.log(s.address().port);s.close();});' 2>/dev/null || echo 28790)"
+pass "Stub config.yaml created (serverPort=${PORT})"
 SRV_LOG="$SANDBOX/server.log"
 
 info "Spawning: node-bin/node $CCUI_DIR/server/index.js (port $PORT)"
