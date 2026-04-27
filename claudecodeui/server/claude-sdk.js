@@ -31,6 +31,11 @@ import {
   drainSessionCronNotifications,
   registerCronSession
 } from './services/cron-session-bridge.js';
+import {
+  loadPluginHooksFromDir,
+  mergeHookMaps,
+  resolveTurnkeyPluginRoot
+} from './plugin-hooks.js';
 
 const activeSessions = new Map();
 const sessionRuntimes = new Map();
@@ -771,7 +776,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
     tempImagePaths = imageResult.tempImagePaths;
     tempDir = imageResult.tempDir;
 
-    sdkOptions.hooks = {
+    const builtInHookMap = {
       Notification: [{
         matcher: '',
         hooks: [async (input) => {
@@ -790,6 +795,43 @@ async function queryClaudeSDK(command, options = {}, ws) {
         }]
       }]
     };
+
+    let pluginHookMap = {};
+    try {
+      const pluginRoot = await resolveTurnkeyPluginRoot(options.cwd || process.cwd());
+      if (pluginRoot) {
+        pluginHookMap = await loadPluginHooksFromDir(pluginRoot);
+        const eventSummary = Object.fromEntries(
+          Object.entries(pluginHookMap).map(([event, matchers]) => [
+            event,
+            matchers.reduce((sum, m) => sum + (m.hooks?.length || 0), 0)
+          ])
+        );
+        if (Object.keys(eventSummary).length > 0) {
+          console.log('[plugin-hooks] turnkey plugin hooks registered', {
+            pluginRoot,
+            counts: eventSummary
+          });
+        }
+      }
+    } catch (pluginErr) {
+      console.warn('[plugin-hooks] failed to load turnkey hooks (non-fatal):', pluginErr?.message || pluginErr);
+    }
+
+    sdkOptions.hooks = mergeHookMaps(builtInHookMap, pluginHookMap);
+
+    if (process.env.PLUGIN_HOOKS_DEBUG === '1') {
+      const dump = Object.fromEntries(
+        Object.entries(sdkOptions.hooks).map(([event, matchers]) => [
+          event,
+          matchers.map(m => ({
+            matcher: m.matcher ?? '<none>',
+            hookCount: m.hooks?.length || 0
+          }))
+        ])
+      );
+      console.log('[plugin-hooks] sdkOptions.hooks shape', dump);
+    }
 
     sdkOptions.canUseTool = async (toolName, input, context) => {
       const requiresInteraction = TOOLS_REQUIRING_INTERACTION.has(toolName);
