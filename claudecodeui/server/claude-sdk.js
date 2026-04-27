@@ -796,11 +796,12 @@ async function queryClaudeSDK(command, options = {}, ws) {
       }]
     };
 
+    let turnkeyPluginRoot = null;
     let pluginHookMap = {};
     try {
-      const pluginRoot = await resolveTurnkeyPluginRoot(options.cwd || process.cwd());
-      if (pluginRoot) {
-        pluginHookMap = await loadPluginHooksFromDir(pluginRoot);
+      turnkeyPluginRoot = await resolveTurnkeyPluginRoot(options.cwd || process.cwd());
+      if (turnkeyPluginRoot) {
+        pluginHookMap = await loadPluginHooksFromDir(turnkeyPluginRoot);
         const eventSummary = Object.fromEntries(
           Object.entries(pluginHookMap).map(([event, matchers]) => [
             event,
@@ -809,7 +810,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
         );
         if (Object.keys(eventSummary).length > 0) {
           console.log('[plugin-hooks] turnkey plugin hooks registered', {
-            pluginRoot,
+            pluginRoot: turnkeyPluginRoot,
             counts: eventSummary
           });
         }
@@ -819,6 +820,19 @@ async function queryClaudeSDK(command, options = {}, ws) {
     }
 
     sdkOptions.hooks = mergeHookMaps(builtInHookMap, pluginHookMap);
+
+    // Plan C C1: 同时通过 SDK options.plugins 把 turnkey plugin 注册到 CLI 子进程，
+    // 让 CLI 自己加载 commands / skills / hooks。Solution A 在 C1 暂留作为 §6.4 双触发
+    // 对照基线，C2 commit 会按 PlanC §4.1 拆掉 Solution A 回到单触发。
+    if (turnkeyPluginRoot) {
+      sdkOptions.plugins = [
+        ...(sdkOptions.plugins || []),
+        { type: 'local', path: turnkeyPluginRoot }
+      ];
+      console.log('[plan-c] turnkey plugin registered via sdkOptions.plugins', {
+        pluginRoot: turnkeyPluginRoot
+      });
+    }
 
     if (process.env.PLUGIN_HOOKS_DEBUG === '1') {
       const dump = Object.fromEntries(
