@@ -1,22 +1,47 @@
 # TODO: Plugin Hooks / Slash Skill Bridge
 
 > 目的：给后续开发者一个起点，继续把 `turnkey-cc-plugin` 在 `claudecodeui` WebUI 中补齐到接近 Claude Code CLI 的体验。
+>
+> **状态（2026-04 Plan C 落地后）**：event hooks **+** slash commands / skills 都已接通。本文档保留作为历史背景与回退知识。
 
 ## 当前结论
 
-`claudecodeui` 里现在已经接通了 **plugin event hooks**，但还没有接通 **plugin slash commands / plugin skills**。
+`claudecodeui` 里**两条链路已全部接通**：plugin event hooks 和 plugin slash commands / skills 走的是同一条 SDK `options.plugins → --plugin-dir` 路径，都由 CLI 子进程原生加载。
+
+历史上这是分两步做的：
+
+| 阶段 | 范围 | 实现 |
+| ---- | ---- | ---- |
+| **Solution A**（已废弃，被 Plan C 取代） | 仅 event hooks | `claudecodeui/server/plugin-hooks.js` 把 `hooks.json` 转成 SDK `options.hooks` callback |
+| **Plan C**（当前生效） | event hooks + commands + skills | `claude-sdk.js` 传 `sdkOptions.plugins = [{type:'local', path: turnkeyPluginRoot}]`，CLI 子进程通过 `--plugin-dir` 加载 plugin |
+
+迁移文档：[`TODO-PluginSlashFix-PlanC.md`](./TODO-PluginSlashFix-PlanC.md)。
+
+实施 commit（`feat/turnkey-plugin-native-loading` 分支）：
+
+- `25f7ee7` — feat(claudecodeui): Plan C C1 — register turnkey plugin via SDK options.plugins
+- `fae9f2c` — refactor(claudecodeui): Plan C C2 — remove Solution A hook injection
+- (this commit) — chore: Plan C C3 — deprecate plugin-hooks.js + smoke regression + update TODO
+
+`plugin-hooks.js` 文件保留但加了 `@deprecated` 标记，仅 `resolveTurnkeyPluginRoot` 仍被 `claude-sdk.js` 使用。剩余导出（`buildCommandHookCallback` / `loadPluginHooksFromDir` / `mergeHookMaps` / `buildHookMapFromConfig`）作为 SDK 0.3+ 不兼容时的回退路径保留。
+
+## 历史背景：Solution A（event hooks 桥接）
+
+> 已被 Plan C 取代。下面这一节描述 Solution A 在 Plan C 之前的工作方式，仅作历史 / 回退知识。
 
 这两条链路是两套机制：
 
 - **Event hooks**：生命周期事件触发外部脚本，例如 `UserPromptSubmit`、`PostToolUse`、`Stop`。
 - **Slash commands / skills**：用户输入 `/turnkey:start ...` 后，Claude Code 从 plugin command/skill 表中找到对应 `SKILL.md`，把它展开成 prompt，让模型按这个 skill 执行。
 
-当前实现只做了前者，所以：
+Solution A 时代只做了前者，所以：
 
 - WebUI 发消息时，`turnkey-capture.js`、`turnkey-budget.js` 等 hook 能触发。
 - `~/.turnkey/inbox.jsonl` 能写入事件。
 - `turnkey-bootstrap.js` 一旦被执行，后续 hook 能正确读到新的 `~/.turnkey/runlog.json`，从而归属到新 `ticket_id`。
 - 但 `/turnkey:start` 本身还不会被 WebUI 识别为 plugin skill，因为 SDK 子进程没有加载 `turnkey-cc-plugin` 的 `skills/start/SKILL.md` 到 command/skill 表和 system prompt。
+
+Plan C 通过让 CLI 子进程自己加载 plugin 一次性解决了这个 gap。
 
 ## 已完成的桥接：event hooks
 
@@ -171,12 +196,17 @@ WebUI 当前没有完成这条链。WebUI 只是把 `/turnkey:start ...` 当普�
 
 ## 建议的下一步实现顺序
 
-1. 先实现方案 B，让 WebUI 立刻能识别 turnkey skill。
-2. 补一个 WebUI smoke test：
-   - 启动 `claudecodeui`
-   - 发送 `/turnkey:start "smoke ticket"`
-   - 批准 Bash
-   - 检查 `runlog.json` 和 `inbox.jsonl`
-3. 再调研方案 C，决定是否替换为 SDK 原生 plugin loading。
-4. 如果方案 C 落地，删除或 gate 掉 Solution A 中对 turnkey hooks 的手工注入，避免重复事件。
+> 历史路径，已按 Plan C 直接跳到 §4 完成，无需再做。
+
+1. ~~先实现方案 B~~（跳过：直接做 Plan C 收益更高）
+2. ~~补 WebUI smoke test~~ → 已在 `claudecodeui/server/plan-c-smoke.test.js` 中加了路径解析回归
+3. ~~调研方案 C~~ → 已落地（详见 [`TODO-PluginSlashFix-PlanC.md`](./TODO-PluginSlashFix-PlanC.md)）
+4. ~~删除或 gate 掉 Solution A~~ → 已删 (commit `fae9f2c`)
+
+## 残留 TODO（Plan C 之后）
+
+- **§6.4 双触发 vs 单触发实测**：跑真实 webui，清空 `~/.turnkey/inbox.jsonl`，发起 1 次 prompt，确认 `wc -l` 等于实际事件数 N（不是 2N）。这一步要本地跑 claudecodeui，按 PlanC §6.4 操作。
+- **Slash autocomplete UI**：webui 输入 `/turnkey:` 时弹 commands 列表。SDK init message 的 `commands` 字段已经能直接喂给 UI，需要 client 端配合。
+- **多 plugin 并存**：`sdkOptions.plugins` 是数组，原生支持多个；但 `resolveTurnkeyPluginRoot` 是单 plugin 的硬编码解析器，需要换成"发现 `packages/*-cc-plugin/`"的扫描器。
+- **Plugin enable/disable 管理面板**：让用户在 webui 里勾选启用哪些 plugin。
 

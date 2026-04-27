@@ -1,6 +1,17 @@
 /**
  * Plugin hooks loader for the Claude Agent SDK.
  *
+ * @deprecated since Plan C (TODO-PluginSlashFix-PlanC.md): turnkey-cc-plugin
+ * 现在通过 SDK `options.plugins` → `--plugin-dir` 由 CLI 子进程原生加载，
+ * commands / skills / hooks 都走 CLI 的 plugin loader。`claude-sdk.js` 现在
+ * 只用本模块的 `resolveTurnkeyPluginRoot` 一个函数。
+ *
+ * 其他导出（`buildCommandHookCallback`、`loadPluginHooksFromDir`、
+ * `mergeHookMaps`、`buildHookMapFromConfig`）保留作为回退路径：如果将来
+ * SDK 0.3+ 对 `SdkPluginConfig` 不兼容，可以临时在 `claude-sdk.js` 里
+ * 重新启用 Solution A 来桥接事件 hooks。详见 PlanC §7.2 / §7.3。
+ *
+ * --- 历史背景（Solution A 设计契约）---------------------------------------
  * Bridges Claude Code plugin `hooks.json` (the same format consumed by the
  * standalone CLI) into the Agent SDK's `options.hooks` callback API. This
  * lets `claudecodeui` reproduce side effects (`turnkey-capture.js`,
