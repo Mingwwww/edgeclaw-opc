@@ -173,6 +173,7 @@ function MainContent({
   const pendingDiscoveryExecutionsRef = useRef<Map<string, PendingDiscoveryExecution>>(new Map());
   const discoveryExecutionsBySessionRef = useRef<Map<string, PendingDiscoveryExecution>>(new Map());
   const autoLaunchInFlightRef = useRef<Set<string>>(new Set());
+  const handledAutoDiscoveryRequestsRef = useRef<Set<string>>(new Set());
 
   const shouldShowTasksTab = Boolean(tasksEnabled && isTaskMasterInstalled);
 
@@ -454,6 +455,51 @@ function MainContent({
     selectedSession,
     sendMessage,
   ]);
+
+  useEffect(() => {
+    if (
+      !latestMessage ||
+      latestMessage.type !== 'always-on-auto-discovery-start' ||
+      !latestMessage.requestId
+    ) {
+      return;
+    }
+    if (handledAutoDiscoveryRequestsRef.current.has(latestMessage.requestId)) {
+      return;
+    }
+    handledAutoDiscoveryRequestsRef.current.add(latestMessage.requestId);
+
+    const selectedProjectRoot = selectedProject?.fullPath || selectedProject?.path || selectedProject?.name;
+    if (!selectedProject || selectedProjectRoot !== latestMessage.projectRoot) {
+      sendMessage({
+        type: 'always-on-auto-discovery-complete',
+        requestId: latestMessage.requestId,
+        projectRoot: latestMessage.projectRoot,
+        result: 'failed',
+        errorMessage: 'Selected project does not match discovery request project.',
+      });
+      return;
+    }
+
+    void handleStartDiscoverySession()
+      .then(() => {
+        sendMessage({
+          type: 'always-on-auto-discovery-complete',
+          requestId: latestMessage.requestId,
+          projectRoot: latestMessage.projectRoot,
+          result: 'started',
+        });
+      })
+      .catch(error => {
+        sendMessage({
+          type: 'always-on-auto-discovery-complete',
+          requestId: latestMessage.requestId,
+          projectRoot: latestMessage.projectRoot,
+          result: 'failed',
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }, [handleStartDiscoverySession, latestMessage, selectedProject, sendMessage]);
 
   if (isLoading) {
     return (

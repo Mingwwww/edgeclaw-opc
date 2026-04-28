@@ -23,7 +23,6 @@ import {
   notifyRunStopped,
   notifyUserIfEnabled
 } from './services/notification-orchestrator.js';
-import { claudeAdapter } from './providers/claude/adapter.js';
 import { createNormalizedMessage } from './providers/types.js';
 import { getLeakedClaudeSdkSpawnOptions } from './claude-code-main-path.js';
 import { getClaudeRuntimeModelConfig } from './utils/claude-runtime-config.js';
@@ -39,6 +38,116 @@ const pendingToolApprovals = new Map();
 const TOOL_APPROVAL_TIMEOUT_MS = parseInt(process.env.CLAUDE_TOOL_APPROVAL_TIMEOUT_MS, 10) || 55000;
 
 const TOOLS_REQUIRING_INTERACTION = new Set(['AskUserQuestion']);
+
+function textFromContent(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      if (part?.type === 'text') return part.text || '';
+      if (part?.type === 'thinking') return part.thinking || part.text || '';
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function normalizeClaudeMessage(raw, sessionId, options = {}) {
+  const timestamp = raw.timestamp || new Date().toISOString();
+  const baseId = raw.uuid || raw.id || createRequestId();
+  const messages = [];
+
+  if (raw.type === 'assistant' && raw.message?.content) {
+    for (const [index, part] of raw.message.content.entries()) {
+      if (part?.type === 'text' && !options.skipStreamedText && part.text) {
+        messages.push(createNormalizedMessage({
+          id: `${baseId}_${index}`,
+          sessionId,
+          timestamp,
+          provider: 'claude',
+          kind: 'text',
+          role: 'assistant',
+          content: part.text,
+        }));
+      } else if (part?.type === 'thinking' && !options.skipStreamedText) {
+        messages.push(createNormalizedMessage({
+          id: `${baseId}_${index}`,
+          sessionId,
+          timestamp,
+          provider: 'claude',
+          kind: 'thinking',
+          content: part.thinking || part.text || '',
+        }));
+      } else if (part?.type === 'tool_use') {
+        messages.push(createNormalizedMessage({
+          id: `${baseId}_${index}`,
+          sessionId,
+          timestamp,
+          provider: 'claude',
+          kind: 'tool_use',
+          toolName: part.name || 'Unknown Tool',
+          toolInput: part.input,
+          toolId: part.id || `${baseId}_${index}`,
+        }));
+      } else if (part?.type === 'tool_result') {
+        messages.push(createNormalizedMessage({
+          id: `${baseId}_${index}`,
+          sessionId,
+          timestamp,
+          provider: 'claude',
+          kind: 'tool_result',
+          toolId: part.tool_use_id || part.id || '',
+          content: part.content || '',
+          isError: Boolean(part.is_error),
+        }));
+      }
+    }
+    return messages;
+  }
+
+  if (raw.message?.role === 'user' && options.includeUserText !== false) {
+    const content = textFromContent(raw.message.content);
+    if (content.trim()) {
+      messages.push(createNormalizedMessage({
+        id: baseId,
+        sessionId,
+        timestamp,
+        provider: 'claude',
+        kind: 'text',
+        role: 'user',
+        content,
+      }));
+    }
+    return messages;
+  }
+
+  if (raw.type === 'partial' || raw.type === 'stream_delta') {
+    const content = raw.content || raw.delta || raw.text || '';
+    if (content) {
+      return [createNormalizedMessage({
+        id: baseId,
+        sessionId,
+        timestamp,
+        provider: 'claude',
+        kind: 'stream_delta',
+        content,
+      })];
+    }
+  }
+
+  if (raw.type === 'result') {
+    return [createNormalizedMessage({
+      id: baseId,
+      sessionId,
+      timestamp,
+      provider: 'claude',
+      kind: 'stream_end',
+    })];
+  }
+
+  return messages;
+}
 
 function normalizeEnvValue(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -414,24 +523,14 @@ function updateSessionRuntime(sessionId, fields = {}) {
 }
 
 function createCronTaskNotificationMessage(sessionId, notification) {
-  const normalizedMessages = claudeAdapter.normalizeMessage({
-    uuid: notification.id,
-    timestamp: new Date(notification.createdAt).toISOString(),
-    message: {
-      role: 'user',
-      content: notification.message
-    }
-  }, sessionId);
-
-  return normalizedMessages.find((message) => message.kind === 'task_notification') ||
-    createNormalizedMessage({
-      id: notification.id,
-      sessionId,
-      provider: 'claude',
-      kind: 'task_notification',
-      status: 'completed',
-      summary: 'Background task update'
-    });
+  return createNormalizedMessage({
+    id: notification.id,
+    sessionId,
+    provider: 'claude',
+    kind: 'task_notification',
+    status: 'completed',
+    summary: notification.message || 'Background task update'
+  });
 }
 
 function emitCronNotificationToRuntime(runtime, notification) {
@@ -955,7 +1054,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
       // been streamed out as `stream_delta` events via the partial
       // message wrapper, so re-emitting them as a fresh text bubble
       // would duplicate everything once streaming finalizes.
-      const normalized = claudeAdapter.normalizeMessage(transformedMessage, sid, {
+      const normalized = normalizeClaudeMessage(transformedMessage, sid, {
         includeUserText: false,
         skipStreamedText: true,
       });
@@ -1098,6 +1197,16 @@ function getActiveClaudeSDKSessions() {
   return getAllSessions();
 }
 
+function getActiveClaudeSDKSessionDetails() {
+  return getAllSessions().map((sessionId) => {
+    const runtime = sessionRuntimes.get(sessionId);
+    return {
+      sessionId,
+      cwd: runtime?.lastQueryOptions?.cwd || null
+    };
+  });
+}
+
 /**
  * Get pending tool approvals for a specific session.
  * @param {string} sessionId - The session ID
@@ -1148,6 +1257,7 @@ export {
   abortClaudeSDKSession,
   isClaudeSDKSessionActive,
   getActiveClaudeSDKSessions,
+  getActiveClaudeSDKSessionDetails,
   resolveToolApproval,
   getPendingApprovalsForSession,
   reconnectSessionWriter

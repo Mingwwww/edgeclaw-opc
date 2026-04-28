@@ -168,6 +168,8 @@ import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js';
 import { resolveAgentTools } from '../tools/AgentTool/agentToolUtils.js';
 import { resumeAgentBackground } from '../tools/AgentTool/resumeAgent.js';
 import { useMainLoopModel } from '../hooks/useMainLoopModel.js';
+import { useAlwaysOnHeartbeat } from '../hooks/useAlwaysOnHeartbeat.js';
+import { useAlwaysOnDiscoveryRequests } from '../hooks/useAlwaysOnDiscoveryRequests.js';
 import { useAppState, useSetAppState, useAppStateStore } from '../state/AppState.js';
 import type { ContentBlockParam, ImageBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { ProcessUserInputContext } from '../utils/processUserInput/processUserInput.js';
@@ -4104,6 +4106,8 @@ export function REPL({
     onSubmitMessage: handleIncomingPrompt
   });
   useCronDaemonNotificationBridge();
+  useAlwaysOnHeartbeat(tasks as Record<string, unknown>);
+  useAlwaysOnDiscoveryRequests(handleIncomingPrompt);
 
   // Scheduled tasks from .claude/scheduled_tasks.json (CronCreate/Delete/List)
   // are always wired up. The hook itself decides at runtime whether cron is

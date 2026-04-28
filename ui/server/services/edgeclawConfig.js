@@ -222,6 +222,19 @@ export function buildDefaultEdgeClawConfig() {
         default: 'inherit',
         params: {},
       },
+      alwaysOn: {
+        discovery: {
+          trigger: {
+            enabled: false,
+            tickIntervalMinutes: 5,
+            cooldownMinutes: 60,
+            dailyBudget: 4,
+            heartbeatStaleSeconds: 90,
+            recentUserMsgMinutes: 5,
+            preferClient: 'webui',
+          },
+        },
+      },
     },
     memory: {
       enabled: true,

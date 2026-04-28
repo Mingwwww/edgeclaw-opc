@@ -11,6 +11,7 @@
 
 import express from 'express';
 import { getProvider, getAllProviders } from '../providers/registry.js';
+import { getSessionMessages } from '../projects.js';
 
 const router = express.Router();
 
@@ -43,6 +44,17 @@ router.get('/:sessionId/messages', async (req, res) => {
       ? parseInt(limitParam, 10)
       : null;
     const offset = parseInt(req.query.offset || '0', 10);
+
+    if (provider === 'claude') {
+      const result = await getSessionMessages(projectName, sessionId, {
+        sessionKind,
+        parentSessionId,
+        relativeTranscriptPath,
+        limit,
+        offset,
+      });
+      return res.json(result);
+    }
 
     const adapter = getProvider(provider);
     if (!adapter) {

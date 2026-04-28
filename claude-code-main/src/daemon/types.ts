@@ -1,4 +1,5 @@
 import type { CronTask } from '../utils/cronTasks.js'
+import type { DiscoveryFireCompleteRequest } from './discoveryScheduler/types.js'
 
 export type DaemonCronTask = CronTask & {
   durable: boolean
@@ -14,6 +15,10 @@ export type CronDaemonRequest =
     }
   | {
       type: 'shutdown'
+    }
+  | {
+      type: 'register_project'
+      projectRoot: string
     }
   | {
       type: 'create_task'
@@ -42,6 +47,7 @@ export type CronDaemonRequest =
       projectRoot: string
       taskId: string
     }
+  | DiscoveryFireCompleteRequest
 
 export type RuntimeSummary = {
   projectRoot: string
@@ -56,6 +62,7 @@ export type CronDaemonResponse =
       data:
         | { type: 'pong'; runtimes: RuntimeSummary[] }
         | { type: 'shutdown' }
+        | { type: 'register_project'; projectRoot: string }
         | { type: 'create_task'; task: DaemonCronTask }
         | { type: 'list_tasks'; tasks: DaemonListedCronTask[] }
         | { type: 'delete_task'; deleted: boolean }
@@ -64,6 +71,7 @@ export type CronDaemonResponse =
             started: boolean
             reason?: 'already_running' | 'not_found'
           }
+        | { type: 'discovery_fire_complete'; accepted: boolean }
     }
   | {
       ok: false

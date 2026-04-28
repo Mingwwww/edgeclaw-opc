@@ -50,6 +50,7 @@ import mime from 'mime-types';
 
 import { getProjects, getSessions, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations } from './projects.js';
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval, getPendingApprovalsForSession, reconnectSessionWriter } from './claude-sdk.js';
+import { handleAlwaysOnPresence, clearAlwaysOnPresence } from './always-on-heartbeat.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
 import { spawnGemini, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-cli.js';
@@ -81,6 +82,7 @@ import { getClaudeRuntimeModelConfig } from './utils/claude-runtime-config.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userDb } from './database/db.js';
 import { configureWebPush } from './services/vapid-keys.js';
 import { shutdownOwnedCronDaemon } from './services/cron-daemon-owner.js';
+import { startDiscoveryTriggerClient, completeDiscoveryFire } from './services/discovery-trigger-client.js';
 import { runServerStartupBeforeListen, startServerAfterStartup } from './services/server-startup.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { DISABLE_LOCAL_AUTH, IS_PLATFORM } from './constants/config.js';
@@ -110,6 +112,14 @@ const WATCHER_DEBOUNCE_MS = 300;
 let projectsWatchers = [];
 let projectsWatcherDebounceTimer = null;
 const connectedClients = new Set();
+const getAlwaysOnClientByWriterId = (writerId) => {
+    for (const client of connectedClients) {
+        if (client.__alwaysOnWriterId === writerId) {
+            return client;
+        }
+    }
+    return null;
+};
 let isGetProjectsRunning = false; // Flag to prevent reentrant calls
 let edgeClawProxyProcess = null;
 
@@ -1749,6 +1759,17 @@ function handleChatConnection(ws, request) {
                     type: 'active-sessions',
                     sessions: activeSessions
                 });
+            } else if (data.type === 'always-on-presence') {
+                await handleAlwaysOnPresence(ws, data);
+            } else if (data.type === 'always-on-presence-clear') {
+                await clearAlwaysOnPresence(ws);
+            } else if (data.type === 'always-on-auto-discovery-complete') {
+                await completeDiscoveryFire(
+                    data.requestId,
+                    data.projectRoot,
+                    data.result === 'failed' ? 'failed' : 'started',
+                    data.errorMessage
+                );
             }
         } catch (error) {
             console.error('[ERROR] Chat WebSocket error:', error.message);
@@ -1763,6 +1784,7 @@ function handleChatConnection(ws, request) {
         console.log('🔌 Chat client disconnected');
         // Remove from connected clients
         connectedClients.delete(ws);
+        void clearAlwaysOnPresence(ws);
     });
 }
 
@@ -2585,6 +2607,11 @@ async function startServer() {
 
                     // Start background memory scheduler for auto index/dream.
                     startMemoryScheduler();
+
+                    const stopDiscoveryTriggerClient = startDiscoveryTriggerClient({
+                        getWebSocketByWriterId: getAlwaysOnClientByWriterId,
+                    });
+                    process.once('exit', stopDiscoveryTriggerClient);
 
                     // Start server-side plugin processes for enabled plugins
                     startEnabledPluginServers().catch(err => {

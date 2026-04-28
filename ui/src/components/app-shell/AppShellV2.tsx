@@ -12,6 +12,7 @@ import ProjectCreationWizard from '../project-creation-wizard';
 import { normalizeProjectForSettings, type SettingsProject } from '../../lib/projectSettings';
 import type { AppTab, Project } from '../../types/app';
 import { api } from '../../utils/api';
+import { useAlwaysOnPresence } from '../../utils/alwaysOnPresence';
 import SidebarV2 from './SidebarV2';
 import MainAreaV2 from './MainAreaV2';
 
@@ -78,6 +79,12 @@ export default function AppShellV2() {
     latestMessage,
     isMobile,
     activeSessions,
+  });
+
+  useAlwaysOnPresence({
+    selectedProject,
+    processingSessions,
+    sendMessage,
   });
 
   // Sync URL projectName -> selectedProject for deep links like /p/:projectName.
