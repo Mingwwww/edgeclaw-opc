@@ -401,10 +401,22 @@ function collectStats(req: any, body: any, response: Response) {
     };
     processUsage().catch(() => {});
 
-    // Replace the response body with the untouched stream
     Object.defineProperty(response, "body", { value: originalStream, writable: false });
+  } else {
+    const cloned = response.clone();
+    cloned.json().then((json: any) => {
+      if (json?.usage) {
+        collector.record({
+          sessionId, provider, model, scenarioType, tier, isSubagent,
+          usage: {
+            input: json.usage.input_tokens,
+            output: json.usage.output_tokens,
+            cacheRead: json.usage.cache_read_input_tokens,
+          },
+        });
+      }
+    }).catch(() => {});
   }
-  // Non-streaming stats are collected after JSON is parsed by the caller
 }
 
 /**
