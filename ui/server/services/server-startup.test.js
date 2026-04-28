@@ -16,6 +16,9 @@ test('runServerStartupBeforeListen initializes the daemon before the rest of sta
     ensureCronDaemonForUiStartupFn: async () => {
       steps.push('daemon');
     },
+    startCronDaemonClientLeaseFn: async () => {
+      steps.push('lease');
+    },
     initializeDatabaseFn: async () => {
       steps.push('database');
     },
@@ -27,7 +30,7 @@ test('runServerStartupBeforeListen initializes the daemon before the rest of sta
     }
   });
 
-  assert.deepEqual(steps, ['owner', 'daemon', 'database', 'local-user', 'web-push']);
+  assert.deepEqual(steps, ['owner', 'daemon', 'lease', 'database', 'local-user', 'web-push']);
 });
 
 test('runServerStartupBeforeListen persists owner only for daemons it starts', async () => {
@@ -44,6 +47,9 @@ test('runServerStartupBeforeListen persists owner only for daemons it starts', a
     persistCurrentCronDaemonOwnerFn: async () => {
       steps.push('persist-owner');
     },
+    startCronDaemonClientLeaseFn: async () => {
+      steps.push('lease');
+    },
     initializeDatabaseFn: async () => {
       steps.push('database');
     },
@@ -55,7 +61,7 @@ test('runServerStartupBeforeListen persists owner only for daemons it starts', a
     }
   });
 
-  assert.deepEqual(steps, ['owner', 'daemon', 'persist-owner', 'database', 'local-user', 'web-push']);
+  assert.deepEqual(steps, ['owner', 'daemon', 'persist-owner', 'lease', 'database', 'local-user', 'web-push']);
 });
 
 test('startServerAfterStartup does not continue into listen when startup fails', async () => {

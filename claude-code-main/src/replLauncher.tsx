@@ -4,12 +4,19 @@ import type { Root } from './ink.js';
 import type { Props as REPLProps } from './screens/REPL.js';
 import type { AppState } from './state/AppStateStore.js';
 import type { FpsMetrics } from './utils/fpsTracker.js';
+import { logForDebugging } from './utils/debug.js';
 type AppWrapperProps = {
   getFpsMetrics: () => FpsMetrics | undefined;
   stats?: StatsStore;
   initialState: AppState;
 };
 export async function launchRepl(root: Root, appProps: AppWrapperProps, replProps: REPLProps, renderAndRun: (root: Root, element: React.ReactNode) => Promise<void>): Promise<void> {
+  const {
+    ensureCronDaemon
+  } = await import('./daemon/client.js');
+  await ensureCronDaemon().catch(error => {
+    logForDebugging(`[CronDaemon] failed to register TUI client lease: ${String(error)}`);
+  });
   const {
     App
   } = await import('./components/App.js');

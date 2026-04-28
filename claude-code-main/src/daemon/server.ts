@@ -7,6 +7,7 @@ import { ProjectRuntime } from './projectRuntime.js'
 import { DaemonSessionTaskStore } from './sessionTaskStore.js'
 import { getCronDaemonSocketPath } from './paths.js'
 import { DiscoveryScheduler } from './discoveryScheduler/index.js'
+import { ClientLeaseRegistry } from './clientLeases.js'
 import type {
   CronDaemonRequest,
   CronDaemonResponse,
@@ -33,6 +34,9 @@ export class CronDaemonServer {
   private readonly discoveryScheduler = new DiscoveryScheduler({
     listProjectRoots: () => this.registry.list(),
   })
+  private readonly clientLeases = new ClientLeaseRegistry({
+    onEmpty: () => this.requestShutdown(),
+  })
   private stopping = false
 
   constructor(
@@ -58,6 +62,7 @@ export class CronDaemonServer {
     })
 
     logForDebugging(`[CronDaemon] listening on ${socketPath}`)
+    this.clientLeases.start()
     this.discoveryScheduler.start()
   }
 
@@ -67,6 +72,7 @@ export class CronDaemonServer {
     for (const runtime of this.runtimes.values()) {
       await runtime.stop()
     }
+    this.clientLeases.stop()
     this.discoveryScheduler.stop()
     await this.sessionTaskStore.persistProjects(this.runtimes.keys())
     await new Promise<void>(resolvePromise => {
@@ -99,7 +105,11 @@ export class CronDaemonServer {
     }
 
     const response = await this.handleRequest(parsed)
-    const shouldShutdown = parsed.type === 'shutdown' && response.ok
+    const shouldShutdown =
+      response.ok &&
+      (parsed.type === 'shutdown' ||
+        (response.data.type === 'unregister_client' &&
+          response.data.remainingClients === 0))
     socket.end(JSON.stringify(response) + '\n', () => {
       if (shouldShutdown) {
         setImmediate(() => {
@@ -126,10 +136,54 @@ export class CronDaemonServer {
           const runtimes = await Promise.all(
             [...this.runtimes.values()].map(runtime => runtime.summarize()),
           )
-          return { ok: true, data: { type: 'pong', runtimes } }
+          return {
+            ok: true,
+            data: {
+              type: 'pong',
+              runtimes,
+              clients: this.clientLeases.summarize(),
+            },
+          }
         }
         case 'shutdown':
           return { ok: true, data: { type: 'shutdown' } }
+        case 'register_client': {
+          const lease = this.clientLeases.register({
+            clientId: request.clientId,
+            clientType: request.clientType,
+            processId: request.processId,
+            ttlMs: request.ttlMs,
+          })
+          return {
+            ok: true,
+            data: {
+              type: 'register_client',
+              registered: true,
+              leaseExpiresAt: lease.leaseExpiresAt,
+            },
+          }
+        }
+        case 'heartbeat_client': {
+          const lease = this.clientLeases.heartbeat(request.clientId, request.ttlMs)
+          return {
+            ok: true,
+            data: {
+              type: 'heartbeat_client',
+              accepted: lease !== null,
+              ...(lease ? { leaseExpiresAt: lease.leaseExpiresAt } : {}),
+            },
+          }
+        }
+        case 'unregister_client': {
+          const remainingClients = this.clientLeases.unregister(request.clientId)
+          return {
+            ok: true,
+            data: {
+              type: 'unregister_client',
+              remainingClients,
+            },
+          }
+        }
         case 'register_project': {
           const projectRoot = await this.ensureRuntime(request.projectRoot)
           return { ok: true, data: { type: 'register_project', projectRoot } }

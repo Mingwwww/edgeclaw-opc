@@ -81,7 +81,7 @@ import { startEnabledPluginServers, stopAllPlugins, getPluginPort } from './util
 import { getClaudeRuntimeModelConfig } from './utils/claude-runtime-config.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userDb } from './database/db.js';
 import { configureWebPush } from './services/vapid-keys.js';
-import { shutdownOwnedCronDaemon } from './services/cron-daemon-owner.js';
+import { stopCronDaemonClientLease } from './services/cron-daemon-client-lease.js';
 import { startDiscoveryTriggerClient, completeDiscoveryFire } from './services/discovery-trigger-client.js';
 import { runServerStartupBeforeListen, startServerAfterStartup } from './services/server-startup.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
@@ -2648,7 +2648,7 @@ async function startServer() {
                         await shutdownCCR();
                     } catch { /* CCR may not have been loaded */ }
                 } finally {
-                    await shutdownOwnedCronDaemon();
+                    await stopCronDaemonClientLease();
                     process.exit(0);
                 }
             })();

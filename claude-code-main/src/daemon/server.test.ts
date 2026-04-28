@@ -28,6 +28,64 @@ test('shutdown request invokes the daemon shutdown callback after responding', a
   expect(calls).toEqual(['shutdown'])
 })
 
+test('client lease IPC tracks clients and shuts down after the last unregister', async () => {
+  const calls: string[] = []
+  const server = new CronDaemonServer(async () => {
+    calls.push('shutdown')
+  })
+
+  const registerResponse = await (server as any).handleRequest({
+    type: 'register_client',
+    clientId: 'web-ui:1',
+    clientType: 'web-ui',
+    processId: 1,
+    ttlMs: 30_000,
+  })
+  expect(registerResponse).toEqual({
+    ok: true,
+    data: {
+      type: 'register_client',
+      registered: true,
+      leaseExpiresAt: expect.any(Number),
+    },
+  })
+
+  const heartbeatResponse = await (server as any).handleRequest({
+    type: 'heartbeat_client',
+    clientId: 'web-ui:1',
+  })
+  expect(heartbeatResponse).toEqual({
+    ok: true,
+    data: {
+      type: 'heartbeat_client',
+      accepted: true,
+      leaseExpiresAt: expect.any(Number),
+    },
+  })
+
+  let response = ''
+  const socket = {
+    end(chunk: string, callback?: () => void) {
+      response += chunk
+      callback?.()
+    },
+  }
+  await (server as any).dispatchLine(
+    JSON.stringify({ type: 'unregister_client', clientId: 'web-ui:1' }),
+    socket,
+  )
+  await new Promise(resolve => setImmediate(resolve))
+
+  expect(JSON.parse(response)).toEqual({
+    ok: true,
+    data: {
+      type: 'unregister_client',
+      remainingClients: 0,
+    },
+  })
+  expect(calls).toEqual(['shutdown'])
+})
+
 async function writeScheduledTasks(projectRoot: string, tasks: unknown[]) {
   const configDir = join(projectRoot, '.claude')
   await mkdir(configDir, { recursive: true })

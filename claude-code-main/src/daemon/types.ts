@@ -1,5 +1,9 @@
 import type { CronTask } from '../utils/cronTasks.js'
 import type { DiscoveryFireCompleteRequest } from './discoveryScheduler/types.js'
+import type {
+  ClientLeaseSummary,
+  CronDaemonClientType,
+} from './clientLeases.js'
 
 export type DaemonCronTask = CronTask & {
   durable: boolean
@@ -15,6 +19,22 @@ export type CronDaemonRequest =
     }
   | {
       type: 'shutdown'
+    }
+  | {
+      type: 'register_client'
+      clientId: string
+      clientType: CronDaemonClientType
+      processId?: number
+      ttlMs?: number
+    }
+  | {
+      type: 'heartbeat_client'
+      clientId: string
+      ttlMs?: number
+    }
+  | {
+      type: 'unregister_client'
+      clientId: string
     }
   | {
       type: 'register_project'
@@ -60,8 +80,26 @@ export type CronDaemonResponse =
   | {
       ok: true
       data:
-        | { type: 'pong'; runtimes: RuntimeSummary[] }
+        | {
+            type: 'pong'
+            runtimes: RuntimeSummary[]
+            clients?: ClientLeaseSummary
+          }
         | { type: 'shutdown' }
+        | {
+            type: 'register_client'
+            registered: true
+            leaseExpiresAt: number
+          }
+        | {
+            type: 'heartbeat_client'
+            accepted: boolean
+            leaseExpiresAt?: number
+          }
+        | {
+            type: 'unregister_client'
+            remainingClients: number
+          }
         | { type: 'register_project'; projectRoot: string }
         | { type: 'create_task'; task: DaemonCronTask }
         | { type: 'list_tasks'; tasks: DaemonListedCronTask[] }
