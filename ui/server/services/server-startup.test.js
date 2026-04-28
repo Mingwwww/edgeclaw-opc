@@ -30,6 +30,34 @@ test('runServerStartupBeforeListen initializes the daemon before the rest of sta
   assert.deepEqual(steps, ['owner', 'daemon', 'database', 'local-user', 'web-push']);
 });
 
+test('runServerStartupBeforeListen persists owner only for daemons it starts', async () => {
+  const steps = [];
+
+  await runServerStartupBeforeListen({
+    initializeCronDaemonOwnerEnvFn: () => {
+      steps.push('owner');
+    },
+    ensureCronDaemonForUiStartupFn: async () => {
+      steps.push('daemon');
+      return { started: true, response: { ok: true, data: { type: 'pong' } } };
+    },
+    persistCurrentCronDaemonOwnerFn: async () => {
+      steps.push('persist-owner');
+    },
+    initializeDatabaseFn: async () => {
+      steps.push('database');
+    },
+    ensureLocalUserWhenAuthDisabledFn: async () => {
+      steps.push('local-user');
+    },
+    configureWebPushFn: () => {
+      steps.push('web-push');
+    }
+  });
+
+  assert.deepEqual(steps, ['owner', 'daemon', 'persist-owner', 'database', 'local-user', 'web-push']);
+});
+
 test('startServerAfterStartup does not continue into listen when startup fails', async () => {
   let listenCalled = false;
 

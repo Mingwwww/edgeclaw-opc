@@ -5,6 +5,20 @@ import { safeParseJSON } from '../utils/json.js'
 
 const DEFAULT_TIMEOUT_MS = 5_000
 
+async function sleep(ms: number): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function isCronDaemonUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (('code' in error &&
+      (error.code === 'ENOENT' || error.code === 'ECONNREFUSED')) ||
+      error.message.includes('closed') ||
+      error.message.includes('socket hang up'))
+  )
+}
+
 export async function sendCronDaemonRequest(
   request: CronDaemonRequest,
   socketPath = getCronDaemonSocketPath(),
@@ -73,4 +87,23 @@ export function assertCronDaemonOk(
   if (!response.ok) {
     throw new Error(response.error)
   }
+}
+
+export async function waitForCronDaemonShutdown(
+  socketPath = getCronDaemonSocketPath(),
+  timeoutMs = 5_000,
+  intervalMs = 100,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      await sendCronDaemonRequest({ type: 'ping' }, socketPath, intervalMs)
+    } catch (error) {
+      if (isCronDaemonUnavailableError(error)) {
+        return true
+      }
+    }
+    await sleep(intervalMs)
+  }
+  return false
 }

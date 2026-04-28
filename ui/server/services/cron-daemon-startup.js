@@ -81,7 +81,8 @@ export async function ensureCronDaemonForUiStartup({
   retryDelayMs = DEFAULT_RETRY_DELAY_MS
 } = {}) {
   try {
-    return await pingCronDaemon({ sendCronDaemonRequestFn });
+    const response = await pingCronDaemon({ sendCronDaemonRequestFn });
+    return { response, started: false };
   } catch (error) {
     if (!isCronDaemonUnavailableError(error)) {
       throw error;
@@ -96,7 +97,8 @@ export async function ensureCronDaemonForUiStartup({
   let lastError = null;
   for (let attempt = 0; attempt < retryAttempts; attempt += 1) {
     try {
-      return await pingCronDaemon({ sendCronDaemonRequestFn });
+      const response = await pingCronDaemon({ sendCronDaemonRequestFn });
+      return { response, started: true };
     } catch (error) {
       lastError = error;
       if (attempt < retryAttempts - 1) {

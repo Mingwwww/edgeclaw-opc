@@ -35,6 +35,10 @@ export class CronDaemonServer {
   })
   private stopping = false
 
+  constructor(
+    private readonly onShutdownRequested?: () => void | Promise<void>,
+  ) {}
+
   async start(): Promise<void> {
     await this.registry.load()
     for (const projectRoot of this.registry.list()) {
@@ -61,7 +65,7 @@ export class CronDaemonServer {
     if (this.stopping) return
     this.stopping = true
     for (const runtime of this.runtimes.values()) {
-      runtime.stop()
+      await runtime.stop()
     }
     this.discoveryScheduler.stop()
     await this.sessionTaskStore.persistProjects(this.runtimes.keys())
@@ -95,12 +99,22 @@ export class CronDaemonServer {
     }
 
     const response = await this.handleRequest(parsed)
-    socket.end(JSON.stringify(response) + '\n')
-    if (parsed.type === 'shutdown' && response.ok) {
-      setTimeout(() => {
-        void this.stop()
-      }, 0)
+    const shouldShutdown = parsed.type === 'shutdown' && response.ok
+    socket.end(JSON.stringify(response) + '\n', () => {
+      if (shouldShutdown) {
+        setImmediate(() => {
+          void this.requestShutdown()
+        })
+      }
+    })
+  }
+
+  private async requestShutdown(): Promise<void> {
+    if (this.onShutdownRequested) {
+      await this.onShutdownRequested()
+      return
     }
+    await this.stop()
   }
 
   private async handleRequest(

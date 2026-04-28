@@ -62,4 +62,21 @@ describe('cron daemon ownership', () => {
     await reconcileCronDaemonOwnerForCurrentProcess()
     expect(await readCronDaemonOwner()).toBeNull()
   })
+
+  test('keeps owner metadata when a client has no owner environment', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'cron-daemon-owner-'))
+    process.env.CLAUDE_CONFIG_DIR = tempDir
+    process.env[CRON_DAEMON_OWNER_KIND_ENV] = 'claudecodeui-server'
+    process.env[CRON_DAEMON_OWNER_TOKEN_ENV] = 'ui-owner'
+
+    await persistRequestedCronDaemonOwner()
+    delete process.env[CRON_DAEMON_OWNER_KIND_ENV]
+    delete process.env[CRON_DAEMON_OWNER_TOKEN_ENV]
+
+    await reconcileCronDaemonOwnerForCurrentProcess()
+    expect(await readCronDaemonOwner()).toMatchObject({
+      kind: 'claudecodeui-server',
+      token: 'ui-owner',
+    })
+  })
 })

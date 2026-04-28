@@ -1,4 +1,8 @@
-import { assertCronDaemonOk, sendCronDaemonRequest } from './ipc.js'
+import {
+  assertCronDaemonOk,
+  sendCronDaemonRequest,
+  waitForCronDaemonShutdown,
+} from './ipc.js'
 import { CronDaemonServer } from './server.js'
 
 export async function daemonMain(args: string[]): Promise<void> {
@@ -6,12 +10,20 @@ export async function daemonMain(args: string[]): Promise<void> {
 
   switch (subcommand) {
     case 'serve': {
-      const server = new CronDaemonServer()
-      await server.start()
+      let server: CronDaemonServer | null = null
+      let shutdownPromise: Promise<void> | null = null
       const shutdown = async () => {
-        await server.stop()
-        process.exit(0)
+        if (!server) return
+        if (!shutdownPromise) {
+          shutdownPromise = (async () => {
+            await server!.stop()
+            process.exit(0)
+          })()
+        }
+        await shutdownPromise
       }
+      server = new CronDaemonServer(shutdown)
+      await server.start()
       process.on('SIGINT', () => {
         void shutdown()
       })
@@ -41,7 +53,11 @@ export async function daemonMain(args: string[]): Promise<void> {
     case 'stop': {
       const response = await sendCronDaemonRequest({ type: 'shutdown' })
       assertCronDaemonOk(response)
-      console.log('Cron daemon shutdown requested.')
+      const stopped = await waitForCronDaemonShutdown()
+      if (!stopped) {
+        throw new Error('Timed out waiting for Cron daemon to shut down')
+      }
+      console.log('Cron daemon shut down.')
       return
     }
     default:

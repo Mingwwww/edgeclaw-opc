@@ -5,6 +5,29 @@ import { join } from 'path'
 import { CronDaemonServer } from './server.js'
 import { ProjectRuntime } from './projectRuntime.js'
 
+test('shutdown request invokes the daemon shutdown callback after responding', async () => {
+  const calls: string[] = []
+  const server = new CronDaemonServer(async () => {
+    calls.push('shutdown')
+  })
+  let response = ''
+  const socket = {
+    end(chunk: string, callback?: () => void) {
+      response += chunk
+      callback?.()
+    },
+  }
+
+  await (server as any).dispatchLine(JSON.stringify({ type: 'shutdown' }), socket)
+  await new Promise(resolve => setImmediate(resolve))
+
+  expect(JSON.parse(response)).toEqual({
+    ok: true,
+    data: { type: 'shutdown' },
+  })
+  expect(calls).toEqual(['shutdown'])
+})
+
 async function writeScheduledTasks(projectRoot: string, tasks: unknown[]) {
   const configDir = join(projectRoot, '.claude')
   await mkdir(configDir, { recursive: true })

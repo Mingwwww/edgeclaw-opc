@@ -12,6 +12,7 @@ import {
   CRON_DAEMON_OWNER_PROCESS_PID_ENV,
   CRON_DAEMON_OWNER_TOKEN_ENV,
   initializeCronDaemonOwnerEnv,
+  persistCurrentCronDaemonOwner,
   shutdownOwnedCronDaemon
 } from './cron-daemon-owner.js';
 
@@ -39,6 +40,19 @@ test('initializeCronDaemonOwnerEnv populates ownership env vars', async () => {
   assert.equal(process.env[CRON_DAEMON_OWNER_PROCESS_PID_ENV], String(process.pid));
 });
 
+test('persistCurrentCronDaemonOwner writes current owner metadata', async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cron-daemon-owner-'));
+  process.env.CLAUDE_CONFIG_DIR = rootDir;
+  const token = initializeCronDaemonOwnerEnv();
+
+  await persistCurrentCronDaemonOwner();
+
+  const owner = await _readCronDaemonOwnerForTest();
+  assert.equal(owner?.kind, CRON_DAEMON_OWNER_KIND);
+  assert.equal(owner?.token, token);
+  assert.equal(owner?.processId, process.pid);
+});
+
 test('shutdownOwnedCronDaemon only sends shutdown when owner token matches', async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cron-daemon-owner-'));
   process.env.CLAUDE_CONFIG_DIR = rootDir;
@@ -63,8 +77,13 @@ test('shutdownOwnedCronDaemon only sends shutdown when owner token matches', asy
       if (newlineIndex === -1) {
         return;
       }
-      requests.push(JSON.parse(buffer.slice(0, newlineIndex)));
-      socket.end(JSON.stringify({ ok: true, data: { type: 'shutdown' } }) + '\n');
+      const request = JSON.parse(buffer.slice(0, newlineIndex));
+      requests.push(request);
+      socket.end(JSON.stringify({ ok: true, data: { type: request.type } }) + '\n', () => {
+        if (request.type === 'shutdown') {
+          server.close();
+        }
+      });
     });
   });
 
@@ -80,9 +99,11 @@ test('shutdownOwnedCronDaemon only sends shutdown when owner token matches', asy
     const owner = await _readCronDaemonOwnerForTest();
     assert.equal(owner?.token, 'matching-token');
     assert.equal(await shutdownOwnedCronDaemon(), true);
-    assert.deepEqual(requests, [{ type: 'shutdown' }]);
+    assert.deepEqual(requests[0], { type: 'shutdown' });
   } finally {
-    await new Promise((resolve) => server.close(resolve));
+    if (server.listening) {
+      await new Promise((resolve) => server.close(resolve));
+    }
   }
 });
 
