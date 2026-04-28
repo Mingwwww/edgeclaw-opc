@@ -28,7 +28,6 @@ import { FileEditPermissionRequest } from './FileEditPermissionRequest/FileEditP
 import { FilesystemPermissionRequest } from './FilesystemPermissionRequest/FilesystemPermissionRequest.js';
 import { FileWritePermissionRequest } from './FileWritePermissionRequest/FileWritePermissionRequest.js';
 import { NotebookEditPermissionRequest } from './NotebookEditPermissionRequest/NotebookEditPermissionRequest.js';
-import { PowerShellPermissionRequest } from './PowerShellPermissionRequest/PowerShellPermissionRequest.js';
 import { SkillPermissionRequest } from './SkillPermissionRequest/SkillPermissionRequest.js';
 import { WebFetchPermissionRequest } from './WebFetchPermissionRequest/WebFetchPermissionRequest.js';
 
@@ -53,7 +52,7 @@ function permissionComponentForTool(tool: Tool): React.ComponentType<PermissionR
     case BashTool:
       return BashPermissionRequest;
     case PowerShellTool:
-      return PowerShellPermissionRequest;
+      return FallbackPermissionRequest;
     case ReviewArtifactTool:
       return ReviewArtifactPermissionRequest ?? FallbackPermissionRequest;
     case WebFetchTool:

@@ -95,18 +95,12 @@ async function main(): Promise<void> {
   }
   if (process.argv[2] === '--claude-in-chrome-mcp') {
     profileCheckpoint('cli_claude_in_chrome_mcp_path');
-    const {
-      runClaudeInChromeMcpServer
-    } = await import('../utils/claudeInChrome/mcpServer.js');
-    await runClaudeInChromeMcpServer();
-    return;
+    process.stderr.write('Claude in Chrome is not available in this build.\n');
+    process.exit(1);
   } else if (process.argv[2] === '--chrome-native-host') {
     profileCheckpoint('cli_chrome_native_host_path');
-    const {
-      runChromeNativeHost
-    } = await import('../utils/claudeInChrome/chromeNativeHost.js');
-    await runChromeNativeHost();
-    return;
+    process.stderr.write('Chrome native host is not available in this build.\n');
+    process.exit(1);
   }
 
   // Fast-path for `--daemon-worker=<kind>` (internal — supervisor spawns this).
