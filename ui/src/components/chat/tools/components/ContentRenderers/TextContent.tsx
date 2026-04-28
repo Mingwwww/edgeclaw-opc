@@ -1,9 +1,19 @@
 import React from 'react';
 
 interface TextContentProps {
-  content: string;
+  content: unknown;
   format?: 'plain' | 'json' | 'code';
   className?: string;
+}
+
+function stringifyContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (content === undefined || content === null) return '';
+  try {
+    return typeof content === 'object' ? JSON.stringify(content, null, 2) : String(content);
+  } catch {
+    return String(content);
+  }
 }
 
 /**
@@ -15,10 +25,12 @@ export const TextContent: React.FC<TextContentProps> = ({
   format = 'plain',
   className = ''
 }) => {
+  const safeContent = stringifyContent(content);
+
   if (format === 'json') {
-    let formattedJson = content;
+    let formattedJson = safeContent;
     try {
-      const parsed = JSON.parse(content);
+      const parsed = JSON.parse(safeContent);
       formattedJson = JSON.stringify(parsed, null, 2);
     } catch (e) {
       // If parsing fails, use original content
@@ -35,7 +47,7 @@ export const TextContent: React.FC<TextContentProps> = ({
   if (format === 'code') {
     return (
       <pre className={`mt-1 overflow-hidden whitespace-pre-wrap break-words rounded border border-gray-200/50 bg-gray-50 p-2 font-mono text-xs text-gray-700 dark:border-gray-700/50 dark:bg-gray-800/50 dark:text-gray-300 ${className}`}>
-        {content}
+        {safeContent}
       </pre>
     );
   }
@@ -43,7 +55,7 @@ export const TextContent: React.FC<TextContentProps> = ({
   // Plain text
   return (
     <div className={`mt-1 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 ${className}`}>
-      {content}
+      {safeContent}
     </div>
   );
 };

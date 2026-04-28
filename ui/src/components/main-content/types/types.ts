@@ -1,4 +1,3 @@
-import type { Dispatch, SetStateAction } from 'react';
 import type { AppTab, Project, ProjectSession } from '../../../types/app';
 
 export type SessionLifecycleHandler = (sessionId?: string | null) => void;
@@ -36,7 +35,7 @@ export type MainContentProps = {
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
   activeTab: AppTab;
-  setActiveTab: Dispatch<SetStateAction<AppTab>>;
+  setActiveTab: (tab: AppTab) => void;
   ws: WebSocket | null;
   sendMessage: (message: unknown) => void;
   latestMessage: unknown;
@@ -52,8 +51,8 @@ export type MainContentProps = {
   onReplaceTemporarySession: SessionLifecycleHandler;
   onNavigateToSession: (targetSessionId: string) => void;
   onStartNewSession: (project: Project) => void;
-  // Used by the Home tab to resume a session: jumps to the Chat tab AND
-  // selects (project, sessionId). Optional because legacy MainContent
+  // Used by session lists to jump to the Agent tab and select
+  // (project, sessionId). Optional because legacy MainContent
   // consumers don't need it.
   onSelectSession?: (project: Project, sessionId: string) => void;
   onShowSettings: () => void;

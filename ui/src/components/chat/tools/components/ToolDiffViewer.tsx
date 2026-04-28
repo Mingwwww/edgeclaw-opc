@@ -7,13 +7,23 @@ type DiffLine = {
 };
 
 interface ToolDiffViewerProps {
-  oldContent: string;
-  newContent: string;
-  filePath: string;
+  oldContent: unknown;
+  newContent: unknown;
+  filePath: unknown;
   createDiff: (oldStr: string, newStr: string) => DiffLine[];
   onFileClick?: () => void;
   badge?: string;
   badgeColor?: 'gray' | 'green';
+}
+
+function stringifyDiffInput(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === undefined || value === null) return '';
+  try {
+    return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 /**
@@ -28,6 +38,9 @@ export const ToolDiffViewer: React.FC<ToolDiffViewerProps> = ({
   badge = 'Diff',
   badgeColor = 'gray'
 }) => {
+  const safeOldContent = stringifyDiffInput(oldContent);
+  const safeNewContent = stringifyDiffInput(newContent);
+  const safeFilePath = stringifyDiffInput(filePath);
   const badgeClasses = badgeColor === 'green'
     ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
     : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400';
@@ -37,9 +50,9 @@ export const ToolDiffViewer: React.FC<ToolDiffViewerProps> = ({
       if (oldContent === undefined || newContent === undefined) {
         return [];
       }
-      return createDiff(oldContent, newContent)
+      return createDiff(safeOldContent, safeNewContent)
     },
-    [createDiff, oldContent, newContent]
+    [createDiff, oldContent, newContent, safeOldContent, safeNewContent]
   );
 
   return (
@@ -51,11 +64,11 @@ export const ToolDiffViewer: React.FC<ToolDiffViewerProps> = ({
             onClick={onFileClick}
             className="cursor-pointer truncate font-mono text-[11px] text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
           >
-            {filePath}
+            {safeFilePath}
           </button>
         ) : (
           <span className="truncate font-mono text-[11px] text-gray-600 dark:text-gray-400">
-            {filePath}
+            {safeFilePath}
           </span>
         )}
         <span className={`rounded px-1.5 py-px text-[10px] font-medium ${badgeClasses} ml-2 flex-shrink-0`}>

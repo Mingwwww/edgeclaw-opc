@@ -1673,8 +1673,8 @@ export class MemoryRepository {
       overview: this.getOverview(),
       settings: this.getIndexingSettings({
         reasoningMode: "answer_first",
-        autoIndexIntervalMinutes: 60,
-        autoDreamIntervalMinutes: 360,
+        autoIndexIntervalMinutes: 30,
+        autoDreamIntervalMinutes: 60,
       }),
       recentMemoryFiles: this.listMemoryEntries({ limit }),
     };

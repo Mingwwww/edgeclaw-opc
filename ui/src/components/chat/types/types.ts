@@ -126,14 +126,10 @@ export interface ChatInterfaceProps {
   externalMessageUpdate?: number;
   onTaskClick?: (...args: unknown[]) => void;
   onShowAllTasks?: (() => void) | null;
-  // V2 only: when true, ignore session/messages and render the Home-style
-  // welcome layout — centered headline + big composer in the middle of the
-  // pane (ChatGPT-style empty state). Used by the Home tab so the tab acts
-  // as "start a new conversation" entry point regardless of which session
-  // happens to be loaded under the hood.
+  // V2 only: when true, ignore session/messages and render the welcome layout:
+  // centered headline + big composer in the middle of the pane.
   forceWelcome?: boolean;
   // Fired the moment the user submits their first message from welcome
-  // mode. The parent uses it to flip the active tab from `home` to `chat`
-  // so the welcome layout doesn't keep forcing itself over a live session.
+  // mode so the parent can leave any legacy welcome-only state.
   onExitWelcome?: () => void;
 }

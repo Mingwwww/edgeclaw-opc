@@ -30,6 +30,77 @@ interface ToolRendererProps {
   };
 }
 
+type ToolRendererErrorBoundaryState = {
+  error: Error | null;
+};
+
+class ToolRendererErrorBoundary extends React.Component<
+  { toolName: string; toolId?: string; children: React.ReactNode },
+  ToolRendererErrorBoundaryState
+> {
+  state: ToolRendererErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ToolRendererErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.warn('[ToolRenderer] Failed to render tool block:', {
+      toolName: this.props.toolName,
+      toolId: this.props.toolId,
+      error,
+      errorInfo,
+    });
+  }
+
+  componentDidUpdate(prevProps: { toolName: string; toolId?: string }) {
+    if (
+      this.state.error &&
+      (prevProps.toolName !== this.props.toolName || prevProps.toolId !== this.props.toolId)
+    ) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="my-1 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/20 dark:text-amber-200">
+          <div className="font-medium">Tool output could not be rendered.</div>
+          <div className="mt-0.5 opacity-80">{this.props.toolName}</div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+function safeCall<T>(label: string, toolName: string, callback: () => T, fallback: T): T {
+  try {
+    return callback();
+  } catch (error) {
+    console.warn(`[ToolRenderer] ${label} failed for ${toolName}:`, error);
+    return fallback;
+  }
+}
+
+function toDisplayString(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') return value;
+  if (value === undefined || value === null) return fallback;
+  try {
+    return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function toObject(value: unknown): Record<string, any> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, any>
+    : {};
+}
+
 function getToolCategory(toolName: string): string {
   if (['Edit', 'Write', 'ApplyPatch'].includes(toolName)) return 'edit';
   if (['Grep', 'Glob'].includes(toolName)) return 'search';
@@ -46,7 +117,7 @@ function getToolCategory(toolName: string): string {
  * Main tool renderer router
  * Routes to OneLineDisplay or CollapsibleDisplay based on tool config
  */
-export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
+const ToolRendererInner: React.FC<ToolRendererProps> = ({
   toolName,
   toolInput,
   toolResult,
@@ -75,10 +146,12 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
 
   const handleAction = useCallback(() => {
     if (displayConfig?.action === 'open-file' && onFileOpen) {
-      const value = displayConfig.getValue?.(parsedData) || '';
+      const value = toDisplayString(
+        safeCall('action value', toolName, () => displayConfig.getValue?.(parsedData), ''),
+      );
       onFileOpen(value);
     }
-  }, [displayConfig, parsedData, onFileOpen]);
+  }, [displayConfig, parsedData, onFileOpen, toolName]);
 
   // Route subagent containers to dedicated component (after hooks to satisfy Rules of Hooks)
   if (isSubagentContainer && subagentState) {
@@ -97,8 +170,11 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
   if (!displayConfig) return null;
 
   if (displayConfig.type === 'one-line') {
-    const value = displayConfig.getValue?.(parsedData) || '';
-    const secondary = displayConfig.getSecondary?.(parsedData);
+    const value = toDisplayString(
+      safeCall('value getter', toolName, () => displayConfig.getValue?.(parsedData), ''),
+    );
+    const secondaryValue = safeCall('secondary getter', toolName, () => displayConfig.getSecondary?.(parsedData), undefined);
+    const secondary = secondaryValue === undefined ? undefined : toDisplayString(secondaryValue);
 
     return (
       <OneLineDisplay
@@ -120,19 +196,32 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
   }
 
   if (displayConfig.type === 'collapsible') {
-    const title = typeof displayConfig.title === 'function'
-      ? displayConfig.title(parsedData)
-      : displayConfig.title || 'Details';
+    const title = toDisplayString(
+      safeCall(
+        'title getter',
+        toolName,
+        () => typeof displayConfig.title === 'function'
+          ? displayConfig.title(parsedData)
+          : displayConfig.title,
+        'Details',
+      ),
+      'Details',
+    );
 
     const defaultOpen = displayConfig.defaultOpen !== undefined
       ? displayConfig.defaultOpen
       : autoExpandTools;
 
-    const contentProps = displayConfig.getContentProps?.(parsedData, {
-      selectedProject,
-      createDiff,
-      onFileOpen
-    }) || {};
+    const contentProps = toObject(safeCall(
+      'content props getter',
+      toolName,
+      () => displayConfig.getContentProps?.(parsedData, {
+        selectedProject,
+        createDiff,
+        onFileOpen
+      }),
+      {},
+    ));
 
     // Build the content component based on contentType
     let contentComponent: React.ReactNode = null;
@@ -142,7 +231,11 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
         if (createDiff) {
           contentComponent = (
             <ToolDiffViewer
-              {...contentProps}
+              oldContent={contentProps.oldContent}
+              newContent={contentProps.newContent}
+              filePath={contentProps.filePath}
+              badge={contentProps.badge}
+              badgeColor={contentProps.badgeColor}
               createDiff={createDiff}
               onFileClick={() => onFileOpen?.(contentProps.filePath)}
             />
@@ -198,7 +291,10 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
         break;
 
       case 'success-message': {
-        const msg = displayConfig.getMessage?.(parsedData) || 'Success';
+        const msg = toDisplayString(
+          safeCall('success message getter', toolName, () => displayConfig.getMessage?.(parsedData), 'Success'),
+          'Success',
+        );
         contentComponent = (
           <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
             <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -236,6 +332,14 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
   }
 
   return null;
-});
+};
+
+ToolRendererInner.displayName = 'ToolRendererInner';
+
+export const ToolRenderer: React.FC<ToolRendererProps> = memo((props) => (
+  <ToolRendererErrorBoundary toolName={props.toolName} toolId={props.toolId}>
+    <ToolRendererInner {...props} />
+  </ToolRendererErrorBoundary>
+));
 
 ToolRenderer.displayName = 'ToolRenderer';

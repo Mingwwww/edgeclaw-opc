@@ -19,6 +19,15 @@
     "tryDifferentSearch": "Try adjusting your search term",
     "runClaudeCli": "Run Claude CLI in a project directory to get started"
   },
+  "general": {
+    "title": "General",
+    "name": "General",
+    "missing": "No general workspace found"
+  },
+  "renamePlaceholder": "Rename - empty to reset",
+  "contextMenu": {
+    "label": "Context menu"
+  },
   "app": {
     "title": "EdgeClaw",
     "subtitle": "AI coding assistant interface"
@@ -29,6 +38,7 @@
     "deleteSession": "Delete Session",
     "renameSession": "Rename Session",
     "noSessions": "No sessions yet",
+    "unsaved": "Not saved yet",
     "loadingSessions": "Loading sessions...",
     "unnamed": "Unnamed",
     "loading": "Loading...",
@@ -41,6 +51,8 @@
     "refresh": "Refresh projects and sessions (Ctrl+R)",
     "renameProject": "Rename project (F2)",
     "deleteProject": "Delete empty project (Delete)",
+    "showSidebar": "Show sidebar",
+    "newChat": "New Chat",
     "addToFavorites": "Add to favorites",
     "removeFromFavorites": "Remove from favorites",
     "editSessionName": "Manually edit session name",
@@ -50,7 +62,7 @@
     "clearSearch": "Clear search"
   },
   "navigation": {
-    "chat": "Chat",
+    "chat": "Agent",
     "files": "Files",
     "git": "Git",
     "terminal": "Terminal",

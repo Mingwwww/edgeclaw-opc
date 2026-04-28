@@ -2,8 +2,18 @@ import React from 'react';
 import { Markdown } from '../../../view/subcomponents/Markdown';
 
 interface MarkdownContentProps {
-  content: string;
+  content: unknown;
   className?: string;
+}
+
+function stringifyMarkdown(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (content === undefined || content === null) return '';
+  try {
+    return typeof content === 'object' ? JSON.stringify(content, null, 2) : String(content);
+  } catch {
+    return String(content);
+  }
 }
 
 /**
@@ -16,7 +26,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({
 }) => {
   return (
     <Markdown className={className}>
-      {content}
+      {stringifyMarkdown(content)}
     </Markdown>
   );
 };

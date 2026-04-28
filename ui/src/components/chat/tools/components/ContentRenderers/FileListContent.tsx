@@ -6,9 +6,23 @@ interface FileListItem {
 }
 
 interface FileListContentProps {
-  files: string[] | FileListItem[];
+  files: unknown;
   onFileClick?: (filePath: string) => void;
   title?: string;
+}
+
+function normalizeFiles(files: unknown): Array<string | FileListItem> {
+  if (!Array.isArray(files)) return [];
+
+  return files.filter((file): file is string | FileListItem => {
+    if (typeof file === 'string') return file.trim().length > 0;
+    return (
+      !!file &&
+      typeof file === 'object' &&
+      typeof (file as FileListItem).path === 'string' &&
+      (file as FileListItem).path.trim().length > 0
+    );
+  });
 }
 
 /**
@@ -20,6 +34,12 @@ export const FileListContent: React.FC<FileListContentProps> = ({
   onFileClick,
   title
 }) => {
+  const safeFiles = normalizeFiles(files);
+
+  if (safeFiles.length === 0) {
+    return null;
+  }
+
   return (
     <div>
       {title && (
@@ -28,7 +48,7 @@ export const FileListContent: React.FC<FileListContentProps> = ({
         </div>
       )}
       <div className="flex max-h-48 flex-wrap gap-x-1 gap-y-0.5 overflow-y-auto">
-        {files.map((file, index) => {
+        {safeFiles.map((file, index) => {
           const filePath = typeof file === 'string' ? file : file.path;
           const fileName = filePath.split('/').pop() || filePath;
           const handleClick = typeof file === 'string'
@@ -44,7 +64,7 @@ export const FileListContent: React.FC<FileListContentProps> = ({
               >
                 {fileName}
               </button>
-              {index < files.length - 1 && (
+              {index < safeFiles.length - 1 && (
                 <span className="ml-1 text-[10px] text-gray-300 dark:text-gray-600">,</span>
               )}
             </span>

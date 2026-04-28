@@ -10,7 +10,11 @@ import { useProjectsState } from '../../hooks/useProjectsState';
 import Settings from '../settings/view/Settings';
 import ProjectCreationWizard from '../project-creation-wizard';
 import { normalizeProjectForSettings, type SettingsProject } from '../../lib/projectSettings';
-import type { AppTab, Project } from '../../types/app';
+import {
+  sessionDisplayTitle,
+  setSessionCustomTitle,
+} from '../../lib/customNames';
+import type { AppTab, Project, ProjectSession, SessionProvider } from '../../types/app';
 import { api } from '../../utils/api';
 import { useAlwaysOnPresence } from '../../utils/alwaysOnPresence';
 import SidebarV2 from './SidebarV2';
@@ -21,6 +25,12 @@ type TypedSettingsProps = {
   onClose: () => void;
   projects: SettingsProject[];
   initialTab: string;
+};
+
+type DeleteSessionTarget = {
+  project: Project;
+  session: ProjectSession;
+  provider: SessionProvider;
 };
 
 const SettingsComponent = Settings as unknown as (props: TypedSettingsProps) => JSX.Element;
@@ -42,6 +52,7 @@ export default function AppShellV2() {
   useTranslation('common');
 
   const { isMobile } = useDeviceSettings({ trackPWA: false });
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const { ws, sendMessage, latestMessage, isConnected } = useWebSocket();
   const wasConnectedRef = useRef(false);
 
@@ -212,6 +223,14 @@ export default function AppShellV2() {
   const onShowSettings = useCallback(() => setShowSettings(true), [setShowSettings]);
   const onCloseSettings = useCallback(() => setShowSettings(false), [setShowSettings]);
   const onMenuClick = useCallback(() => setSidebarOpen(true), [setSidebarOpen]);
+  const onCollapseSidebar = useCallback(() => {
+    if (isMobile) {
+      setSidebarOpen(false);
+    } else {
+      setDesktopSidebarOpen(false);
+    }
+  }, [isMobile, setSidebarOpen]);
+  const onOpenDesktopSidebar = useCallback(() => setDesktopSidebarOpen(true), []);
 
   // Project creation wizard (local existing / new local / github clone). The
   // sidebar's Projects-section "+" opens this; row-level "+" is for new sessions.
@@ -239,9 +258,9 @@ export default function AppShellV2() {
     setDeleteTarget(null);
     setDeleteError(null);
   }, [isDeletingProject]);
-  const handleConfirmDelete = useCallback(async () => {
-    if (!deleteTarget) return;
-    const target = deleteTarget;
+	  const handleConfirmDelete = useCallback(async () => {
+	    if (!deleteTarget) return;
+	    const target = deleteTarget;
     setIsDeletingProject(true);
     setDeleteError(null);
     try {
@@ -257,10 +276,61 @@ export default function AppShellV2() {
       setDeleteError(err instanceof Error ? err.message : 'Failed to delete project');
     } finally {
       setIsDeletingProject(false);
-    }
-  }, [deleteTarget, refreshProjectsSilently, sidebarSharedProps]);
+	    }
+	  }, [deleteTarget, refreshProjectsSilently, sidebarSharedProps]);
 
-  const handleSelectProject = useCallback(
+	  const [deleteSessionTarget, setDeleteSessionTarget] = useState<DeleteSessionTarget | null>(null);
+	  const [isDeletingSession, setIsDeletingSession] = useState(false);
+	  const [deleteSessionError, setDeleteSessionError] = useState<string | null>(null);
+	  const handleRequestDeleteSession = useCallback(
+	    (project: Project, session: ProjectSession, provider: SessionProvider) => {
+	      setDeleteSessionError(null);
+	      setDeleteSessionTarget({ project, session, provider });
+	    },
+	    [],
+	  );
+	  const handleCancelDeleteSession = useCallback(() => {
+	    if (isDeletingSession) return;
+	    setDeleteSessionTarget(null);
+	    setDeleteSessionError(null);
+	  }, [isDeletingSession]);
+	  const handleConfirmDeleteSession = useCallback(async () => {
+	    if (!deleteSessionTarget) return;
+
+	    const { project, session, provider } = deleteSessionTarget;
+	    setIsDeletingSession(true);
+	    setDeleteSessionError(null);
+
+	    try {
+	      const projectPath = project.fullPath || project.path || '';
+	      let response: Response;
+	      if (provider === 'codex') {
+	        response = await api.deleteCodexSession(session.id);
+	      } else if (provider === 'cursor') {
+	        response = await api.deleteCursorSession(session.id, projectPath);
+	      } else if (provider === 'gemini') {
+	        response = await api.deleteGeminiSession(session.id);
+	      } else {
+	        response = await api.deleteSession(project.name, session.id);
+	      }
+
+	      if (!response.ok) {
+	        const body = (await response.json().catch(() => ({}))) as { error?: string };
+	        throw new Error(body.error || `Failed (HTTP ${response.status})`);
+	      }
+
+	      sidebarSharedProps.onSessionDelete?.(session.id);
+	      setSessionCustomTitle(session.id, null);
+	      await refreshProjectsSilently();
+	      setDeleteSessionTarget(null);
+	    } catch (err) {
+	      setDeleteSessionError(err instanceof Error ? err.message : 'Failed to delete conversation');
+	    } finally {
+	      setIsDeletingSession(false);
+	    }
+	  }, [deleteSessionTarget, refreshProjectsSilently, sidebarSharedProps]);
+
+	  const handleSelectProject = useCallback(
     (project: Project) => {
       handleProjectSelect(project);
       navigate(`/p/${encodeURIComponent(project.name)}`);
@@ -291,10 +361,8 @@ export default function AppShellV2() {
 
   const handleSelectTab = useCallback(
     (tab: AppTab) => {
-      // Home is the "true welcome" entry — drop any previously-selected
-      // session (and the /session/<id> URL that would re-resolve it via
-      // useProjectsState) so the next message submitted from Home creates
-      // a fresh session instead of being appended to the previous one.
+      // `home` is retained only for old persisted state / links. The Agent
+      // surface now owns both the welcome/new-session state and transcripts.
       if (tab === 'home') {
         setSelectedSession(null);
         const target = selectedProject
@@ -303,6 +371,8 @@ export default function AppShellV2() {
         if (window.location.pathname !== target) {
           navigate(target);
         }
+        setActiveTab('chat');
+        return;
       }
       setActiveTab(tab);
     },
@@ -337,17 +407,19 @@ export default function AppShellV2() {
       onSelectTab={handleSelectTab}
       onSelectProject={handleSelectProject}
       onSelectSession={handleSelectSession}
-      onStartNewSession={handleStartNewSession}
-      onCreateProject={handleOpenNewProject}
-      onRequestDeleteProject={handleRequestDeleteProject}
-      onShowSettings={onShowSettings}
-    />
+	      onStartNewSession={handleStartNewSession}
+	      onCreateProject={handleOpenNewProject}
+	      onRequestDeleteProject={handleRequestDeleteProject}
+	      onRequestDeleteSession={handleRequestDeleteSession}
+	      onShowSettings={onShowSettings}
+	      onCollapse={onCollapseSidebar}
+	    />
   );
 
   return (
     <div className="ui-v2 fixed inset-0 flex bg-white font-sans text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       {!isMobile ? (
-        sidebar
+        desktopSidebarOpen ? sidebar : null
       ) : (
         <div
           className={`fixed inset-0 z-50 flex transition-opacity duration-150 ease-out ${
@@ -394,6 +466,8 @@ export default function AppShellV2() {
           onStartNewSession={handleNewSession}
           onSelectSession={handleSelectSession}
           onShowSettings={onShowSettings}
+          isSidebarCollapsed={!isMobile && !desktopSidebarOpen}
+          onOpenSidebar={onOpenDesktopSidebar}
           externalMessageUpdate={externalMessageUpdate}
         />
       </main>
@@ -420,21 +494,34 @@ export default function AppShellV2() {
           )
         : null}
 
-      {deleteTarget
-        ? ReactDOM.createPortal(
-            <DeleteProjectDialog
+	      {deleteTarget
+	        ? ReactDOM.createPortal(
+	            <DeleteProjectDialog
               project={deleteTarget}
               isDeleting={isDeletingProject}
               error={deleteError}
               onCancel={handleCancelDelete}
               onConfirm={handleConfirmDelete}
             />,
-            document.body,
-          )
-        : null}
-    </div>
-  );
-}
+	            document.body,
+	          )
+	        : null}
+
+	      {deleteSessionTarget
+	        ? ReactDOM.createPortal(
+	            <DeleteSessionDialog
+	              target={deleteSessionTarget}
+	              isDeleting={isDeletingSession}
+	              error={deleteSessionError}
+	              onCancel={handleCancelDeleteSession}
+	              onConfirm={handleConfirmDeleteSession}
+	            />,
+	            document.body,
+	          )
+	        : null}
+	    </div>
+	  );
+	}
 
 type DeleteProjectDialogProps = {
   project: Project;
@@ -514,6 +601,77 @@ function DeleteProjectDialog({
           >
             {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" strokeWidth={1.75} />}
             {isDeleting ? 'Deleting…' : 'Delete project'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type DeleteSessionDialogProps = {
+  target: DeleteSessionTarget;
+  isDeleting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+};
+
+function DeleteSessionDialog({
+  target,
+  isDeleting,
+  error,
+  onCancel,
+  onConfirm,
+}: DeleteSessionDialogProps) {
+  const projectName = target.project.displayName || target.project.name;
+  const sessionTitle = sessionDisplayTitle(target.session);
+
+  return (
+    <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-xl border border-border bg-card text-card-foreground shadow-xl">
+        <div className="flex items-start gap-3 border-b border-border p-5">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-destructive/15 text-destructive">
+            <Trash2 className="h-5 w-5" strokeWidth={1.75} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-semibold text-foreground">Delete conversation?</h3>
+            <p className="mt-1 truncate text-sm text-muted-foreground">
+              {sessionTitle}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3 p-5">
+          <p className="text-sm text-foreground">
+            This removes the conversation from <span className="font-medium">{projectName}</span>.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Provider: <span className="font-medium text-foreground">{target.provider}</span>
+          </p>
+          {error ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border bg-muted/30 px-5 py-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-destructive px-3 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
+          >
+            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" strokeWidth={1.75} />}
+            {isDeleting ? 'Deleting…' : 'Delete conversation'}
           </button>
         </div>
       </div>

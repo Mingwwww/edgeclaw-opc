@@ -111,8 +111,6 @@
     "mentionFile": "引用文件",
     "send": "发送",
     "stop": "停止",
-    "disclaimer": "EdgeClaw 输出可能存在不准确，回车发送。",
-    "disclaimerCtrlEnter": "EdgeClaw 输出可能存在不准确，⌘↩ 发送。",
     "hintText": {
       "ctrlEnter": "Ctrl+Enter 发送 • Shift+Enter 换行 • Tab 切换模式 • / 斜杠命令",
       "enter": "Enter 发送 • Shift+Enter 换行 • Tab 切换模式 • / 斜杠命令"
@@ -266,11 +264,11 @@
     "nextTaskPrompt": "开始下一个任务"
   },
   "composer": {
-    "welcomePlaceholder": "随便聊聊…"
+    "placeholder": "告诉 EdgeClaw 你想完成什么…",
+    "welcomePlaceholder": "告诉 EdgeClaw 你想完成什么…"
   },
   "welcome": {
     "greetingWithProject": "今天想做点什么？",
-    "noProject": "从左侧选择一个项目开始",
-    "hint": "输入消息后我们会帮你创建一个新会话。"
+    "noProject": "从左侧选择一个项目开始"
   }
 }

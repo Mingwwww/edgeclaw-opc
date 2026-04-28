@@ -278,5 +278,9 @@
   },
   "tasks": {
     "nextTaskPrompt": "Start the next task"
+  },
+  "composer": {
+    "placeholder": "Tell EdgeClaw what you want to get done…",
+    "welcomePlaceholder": "Tell EdgeClaw what you want to get done…"
   }
 }

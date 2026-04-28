@@ -29,15 +29,12 @@
           <nav id="boardNavTabs" class="nav-tabs">
             <button class="nav-tab active" data-page="project" type="button">
               <span class="nav-tab-label" data-i18n="nav.project"></span>
-              <span id="navProjectCount" class="nav-tab-count">0</span>
             </button>
             <button class="nav-tab" data-page="user" type="button">
               <span class="nav-tab-label" data-i18n="nav.user"></span>
-              <span id="navUserCount" class="nav-tab-count">0</span>
             </button>
             <button class="nav-tab" data-page="trace" type="button">
               <span class="nav-tab-label" data-i18n="nav.trace"></span>
-              <span id="navTraceCount" class="nav-tab-count">0</span>
             </button>
           </nav>
         </div>
@@ -75,21 +72,18 @@
             <section id="projectEntriesSection" class="board-group">
               <div class="board-group-header">
                 <div><h4 data-i18n="project.section.title"></h4><p class="board-group-subtitle" data-i18n="project.section.subtitle"></p></div>
-                <span id="projectEntriesCount" class="group-count">0</span>
               </div>
               <div id="projectEntries" class="board-card-grid"></div>
             </section>
             <section id="feedbackEntriesSection" class="board-group">
               <div class="board-group-header">
                 <div><h4 data-i18n="feedback.section.title"></h4><p class="board-group-subtitle" data-i18n="feedback.section.subtitle"></p></div>
-                <span id="feedbackEntriesCount" class="group-count">0</span>
               </div>
               <div id="feedbackEntries" class="board-card-grid"></div>
             </section>
             <section id="deprecatedEntriesSection" class="board-group hidden">
               <div class="board-group-header">
                 <div><h4 data-i18n="deprecated.section.title"></h4><p class="board-group-subtitle" data-i18n="deprecated.section.subtitle"></p></div>
-                <span id="deprecatedEntriesCount" class="group-count">0</span>
               </div>
               <div id="deprecatedEntries" class="board-card-grid"></div>
             </section>
@@ -100,7 +94,6 @@
             <section class="board-group">
               <div class="board-group-header">
                 <div><h4 data-i18n="user.section.title"></h4><p class="board-group-subtitle" data-i18n="user.section.subtitle"></p></div>
-                <span id="userSummaryCount" class="group-count">0</span>
               </div>
               <div id="userSummary" class="stack"></div>
             </section>
@@ -136,7 +129,6 @@
             <div id="recallPanel" class="trace-panel trace-panel-active">
               <section class="board-group">
                 <div class="board-group-header"><div><h4 data-i18n="trace.selectCase"></h4></div>
-                  <span id="recallTraceCount" class="group-count">0</span>
                 </div>
                 <select id="recallCaseSelect" class="trace-select"><option value="" data-i18n="trace.selectRecallCase"></option></select>
               </section>
@@ -168,7 +160,6 @@
             <div id="indexPanel" class="trace-panel">
               <section class="board-group">
                 <div class="board-group-header"><div><h4 data-i18n="trace.selectTrace"></h4></div>
-                  <span id="indexTraceCount" class="group-count">0</span>
                 </div>
                 <select id="indexTraceSelect" class="trace-select"><option value="" data-i18n="trace.selectIndexTrace"></option></select>
               </section>
@@ -185,7 +176,6 @@
             <div id="dreamPanel" class="trace-panel">
               <section class="board-group">
                 <div class="board-group-header"><div><h4 data-i18n="trace.selectTrace"></h4></div>
-                  <span id="dreamTraceCount" class="group-count">0</span>
                 </div>
                 <select id="dreamTraceSelect" class="trace-select"><option value="" data-i18n="trace.selectDreamTrace"></option></select>
               </section>
@@ -221,7 +211,7 @@
               <div class="settings-field">
                 <label for="settingAutoIndex" data-i18n="settings.autoIndex.label"></label>
                 <div class="settings-input-row">
-                  <input id="settingAutoIndex" type="number" min="0" step="any" value="1" class="settings-input settings-input--with-unit" />
+                  <input id="settingAutoIndex" type="number" min="0" step="any" value="30" class="settings-input settings-input--with-unit" />
                   <select id="settingAutoIndexUnit" class="settings-input settings-unit-select">
                     <option value="minutes" data-i18n="settings.unit.minutes"></option>
                     <option value="hours" data-i18n="settings.unit.hours"></option>
@@ -232,7 +222,7 @@
               <div class="settings-field">
                 <label for="settingAutoDream" data-i18n="settings.autoDream.label"></label>
                 <div class="settings-input-row">
-                  <input id="settingAutoDream" type="number" min="0" step="any" value="6" class="settings-input settings-input--with-unit" />
+                  <input id="settingAutoDream" type="number" min="0" step="any" value="1" class="settings-input settings-input--with-unit" />
                   <select id="settingAutoDreamUnit" class="settings-input settings-unit-select">
                     <option value="minutes" data-i18n="settings.unit.minutes"></option>
                     <option value="hours" data-i18n="settings.unit.hours"></option>

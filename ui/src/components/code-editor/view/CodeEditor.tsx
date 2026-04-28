@@ -201,7 +201,6 @@ export default function CodeEditor({
             saving={saving}
             saveSuccess={saveSuccess}
             onToggleMarkdownPreview={() => setMarkdownPreview((previous) => !previous)}
-            onOpenSettings={() => window.openSettings?.('appearance')}
             onDownload={handleDownload}
             onSave={handleSave}
             onToggleFullscreen={() => setIsFullscreen((previous) => !previous)}
@@ -210,7 +209,6 @@ export default function CodeEditor({
               showingChanges: t('header.showingChanges'),
               editMarkdown: t('actions.editMarkdown'),
               previewMarkdown: t('actions.previewMarkdown'),
-              settings: t('toolbar.settings'),
               download: t('actions.download'),
               save: t('actions.save'),
               saving: t('actions.saving'),
@@ -222,7 +220,7 @@ export default function CodeEditor({
           />
 
           {saveError && (
-            <div className="text-xxs border-b border-red-200/60 bg-red-50 px-4 py-1.5 text-red-700 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
+            <div className="border-b border-red-200/60 bg-red-50 px-4 py-1.5 text-xxs text-red-700 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
               {saveError}
             </div>
           )}

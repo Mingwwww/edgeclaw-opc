@@ -169,7 +169,31 @@ export function useChatSessionState({
       setCurrentSessionId(selSid);
     }
   } else if (currentSessionId !== effectiveCurrentRef.current) {
-    effectiveCurrentRef.current = currentSessionId;
+    const pendingSessionId = pendingViewSessionRef.current?.sessionId ?? null;
+    const isPendingSessionHandoff =
+      Boolean(currentSessionId) && pendingSessionId === currentSessionId;
+    if (selSid) {
+      effectiveCurrentRef.current = selSid;
+      if (currentSessionId !== selSid) {
+        setCurrentSessionId(selSid);
+      }
+    } else if (isPendingSessionHandoff) {
+      effectiveCurrentRef.current = currentSessionId;
+    } else {
+      effectiveCurrentRef.current = null;
+      if (currentSessionId !== null) {
+        setCurrentSessionId(null);
+      }
+    }
+  }
+  const pendingSessionIdForRender = pendingViewSessionRef.current?.sessionId ?? null;
+  // No selectedSession means we are intentionally on a fresh chat surface unless
+  // the backend is still handing us the real id for the first message.
+  const hasStaleUnselectedCurrentSession =
+    Boolean(currentSessionId) && !selSid && pendingSessionIdForRender !== currentSessionId;
+  if (hasStaleUnselectedCurrentSession) {
+    effectiveCurrentRef.current = null;
+    setCurrentSessionId(null);
   }
 
   const activeSessionId = selSid ?? effectiveCurrentRef.current;
@@ -367,11 +391,15 @@ export function useChatSessionState({
       // ~1s until selectedSession finally catches up. Skip the reset in
       // that exact transient state so the user message + streaming
       // response stay rendered through the handoff.
-      if (!selectedSession && currentSessionId) {
+      const isPendingSessionHandoff =
+        Boolean(currentSessionId) &&
+        pendingViewSessionRef.current?.sessionId === currentSessionId;
+      if (!selectedSession && isPendingSessionHandoff) {
         return;
       }
       resetStreamingState();
       pendingViewSessionRef.current = null;
+      setPendingUserMessage(null);
       setClaudeStatus(null);
       setCanAbortSession(false);
       setIsLoading(false);
@@ -672,14 +700,16 @@ export function useChatSessionState({
   }, [handleScroll]);
 
   useEffect(() => {
-    const activeViewSessionId = selectedSession?.id || currentSessionId;
+    const pendingSessionId = pendingViewSessionRef.current?.sessionId ?? null;
+    const activeViewSessionId =
+      selectedSession?.id || (pendingSessionId === currentSessionId ? currentSessionId : null);
     if (!activeViewSessionId || !processingSessions) return;
     const shouldBeProcessing = processingSessions.has(activeViewSessionId);
     if (shouldBeProcessing && !isLoading) {
       setIsLoading(true);
       setCanAbortSession(true);
     }
-  }, [currentSessionId, isLoading, processingSessions, selectedSession?.id]);
+  }, [currentSessionId, isLoading, pendingViewSessionRef, processingSessions, selectedSession?.id]);
 
   // "Load all" overlay
   const prevLoadingRef = useRef(false);

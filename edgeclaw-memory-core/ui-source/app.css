@@ -275,26 +275,6 @@ button:disabled {
   pointer-events: none;
 }
 
-.nav-tab-count {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--bg-inset);
-  color: var(--text-3);
-  font-size: 11px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-.nav-tab.active .nav-tab-count {
-  background: var(--accent);
-  color: var(--accent-on);
-}
-
 /* ── Action Buttons ── */
 
 .action-btn {
@@ -1069,38 +1049,75 @@ button:disabled {
   gap: 6px;
 }
 
-.project-selector-grid {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 10px;
-}
-
-.project-selector-card {
-  text-align: left;
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-raised);
-  padding: 12px 12px 10px 14px;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s, background 0.15s;
-}
-
-.project-selector-card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--border-strong);
-}
-
-.project-selector-card.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
 .project-context-summary {
   margin-top: 14px;
   border-top: 1px solid var(--border);
   padding-top: 14px;
+}
+
+.project-context-summary--selector {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.project-topic-select-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.project-topic-select-label {
+  color: var(--text-1);
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.project-topic-select-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(520px, 100%);
+}
+
+.project-topic-select-wrap::after {
+  content: "⌄";
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-52%);
+  color: var(--text-3);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.project-topic-select {
+  appearance: none;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-1);
+  padding: 3px 28px 3px 8px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.project-topic-select:hover {
+  border-color: var(--border);
+  background: var(--bg-raised);
+}
+
+.project-topic-select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ── Board Groups ── */
@@ -1134,21 +1151,6 @@ button:disabled {
   margin: 2px 0 0;
   color: var(--text-3);
   font-size: 12px;
-}
-
-.group-count {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--bg-inset);
-  color: var(--text-3);
-  font-size: 11px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
 }
 
 /* ── Card Grid ── */

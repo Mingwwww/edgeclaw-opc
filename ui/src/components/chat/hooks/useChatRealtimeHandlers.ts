@@ -106,8 +106,11 @@ export function useChatRealtimeHandlers({
     if (lastProcessedMessageRef.current === latestMessage) return;
     lastProcessedMessageRef.current = latestMessage;
 
+    const pendingSessionId = pendingViewSessionRef.current?.sessionId ?? null;
+    const activeCurrentSessionId =
+      pendingSessionId === currentSessionId ? currentSessionId : null;
     const activeViewSessionId =
-      selectedSession?.id || currentSessionId || pendingViewSessionRef.current?.sessionId || null;
+      selectedSession?.id || activeCurrentSessionId || pendingSessionId || null;
 
     /* ---------------------------------------------------------------- */
     /*  Legacy messages (no `kind` field) — handle and return           */
@@ -239,6 +242,9 @@ export function useChatRealtimeHandlers({
             prev.map((r) => (r.sessionId ? r : { ...r, sessionId: newSessionId })),
           );
         }
+        if (window.refreshProjects) {
+          setTimeout(() => window.refreshProjects?.(), 500);
+        }
         onNavigateToSession?.(newSessionId);
         break;
       }
@@ -273,9 +279,11 @@ export function useChatRealtimeHandlers({
 
         // Clear pending session
         const pendingSessionId = sessionStorage.getItem('pendingSessionId');
-        if (pendingSessionId && !currentSessionId && msg.exitCode === 0) {
+        if (pendingSessionId && msg.exitCode === 0) {
           const actualId = msg.actualSessionId || pendingSessionId;
-          setCurrentSessionId(actualId);
+          if (!currentSessionId) {
+            setCurrentSessionId(actualId);
+          }
           if (msg.actualSessionId) {
             onNavigateToSession?.(actualId);
           }

@@ -1,8 +1,8 @@
 {
   "dashboard": {
-    "title": "仪表盘",
+    "title": "路由",
     "subtitle": "覆盖所有项目与会话的用量统计。",
-    "loading": "正在加载仪表盘…",
+    "loading": "正在加载路由…",
     "retry": "重试",
     "refresh": "刷新",
     "stats": {

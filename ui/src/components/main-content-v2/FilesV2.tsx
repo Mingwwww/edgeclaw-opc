@@ -89,7 +89,7 @@ export default function FilesV2({ selectedProject, onFileOpen }: FilesV2Props) {
   return (
     <div className="flex h-full flex-col bg-white dark:bg-neutral-950">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-neutral-200 px-6 dark:border-neutral-800">
-        <span className="text-xxs truncate font-mono text-neutral-500 dark:text-neutral-400">
+        <span className="truncate font-mono text-xxs text-neutral-500 dark:text-neutral-400">
           {cwd}
         </span>
         <div className="flex items-center gap-1">
@@ -97,33 +97,33 @@ export default function FilesV2({ selectedProject, onFileOpen }: FilesV2Props) {
             type="button"
             onClick={refreshFiles}
             disabled={loading}
-            className="text-xxs inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-900"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-900"
             title={t('fileTree.refresh', { defaultValue: 'Refresh' }) as string}
+            aria-label={t('fileTree.refresh', { defaultValue: 'Refresh' }) as string}
           >
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} strokeWidth={1.75} />
-            <span>{t('fileTree.refresh', { defaultValue: 'Refresh' })}</span>
           </button>
           <button
             type="button"
             onClick={collapseAll}
             disabled={!hasExpanded}
-            className="text-xxs inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-40 dark:text-neutral-300 dark:hover:bg-neutral-900"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-40 dark:text-neutral-300 dark:hover:bg-neutral-900"
             title={t('fileTree.collapseAll', { defaultValue: 'Collapse all' }) as string}
+            aria-label={t('fileTree.collapseAll', { defaultValue: 'Collapse all' }) as string}
           >
             <ChevronsDownUp className="h-3.5 w-3.5" strokeWidth={1.75} />
-            <span>{t('fileTree.collapseAll', { defaultValue: 'Collapse' })}</span>
           </button>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto py-2 text-[13px]">
         {loading && files.length === 0 ? (
-          <div className="text-xxs flex items-center justify-center gap-2 py-6 text-neutral-500 dark:text-neutral-400">
+          <div className="flex items-center justify-center gap-2 py-6 text-xxs text-neutral-500 dark:text-neutral-400">
             <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
             <span>{t('loading', { defaultValue: 'Loading…' })}</span>
           </div>
         ) : flat.length === 0 ? (
-          <div className="text-xxs py-6 text-center text-neutral-500 dark:text-neutral-400">
+          <div className="py-6 text-center text-xxs text-neutral-500 dark:text-neutral-400">
             {t('fileTree.empty', { defaultValue: 'This project is empty.' })}
           </div>
         ) : (

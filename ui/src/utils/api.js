@@ -113,6 +113,14 @@ export const api = {
     authenticatedFetch(`/api/codex/sessions/${sessionId}`, {
       method: 'DELETE',
     }),
+  deleteCursorSession: (sessionId, projectPath = '') => {
+    const params = new URLSearchParams();
+    if (projectPath) params.append('projectPath', projectPath);
+    const query = params.toString();
+    return authenticatedFetch(`/api/cursor/sessions/${sessionId}${query ? `?${query}` : ''}`, {
+      method: 'DELETE',
+    });
+  },
   deleteGeminiSession: (sessionId) =>
     authenticatedFetch(`/api/gemini/sessions/${sessionId}`, {
       method: 'DELETE',

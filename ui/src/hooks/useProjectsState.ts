@@ -129,13 +129,16 @@ const isValidTab = (tab: string): tab is AppTab => {
 const readPersistedTab = (): AppTab => {
   try {
     const stored = localStorage.getItem('activeTab');
+    if (stored === 'home') {
+      return 'chat';
+    }
     if (stored && isValidTab(stored)) {
       return stored as AppTab;
     }
   } catch {
     // localStorage unavailable
   }
-  return 'home';
+  return 'chat';
 };
 
 export function useProjectsState({
@@ -458,24 +461,38 @@ export function useProjectsState({
     [isMobile, navigate],
   );
 
-  const handleSessionDelete = useCallback(
-    (sessionIdToDelete: string) => {
-      if (selectedSession?.id === sessionIdToDelete) {
-        setSelectedSession(null);
-        navigate('/');
-      }
+	  const handleSessionDelete = useCallback(
+	    (sessionIdToDelete: string) => {
+	      if (selectedSession?.id === sessionIdToDelete) {
+	        setSelectedSession(null);
+	        navigate('/');
+	      }
 
-      setProjects((prevProjects) =>
-        prevProjects.map((project) => ({
-          ...project,
-          sessions: project.sessions?.filter((session) => session.id !== sessionIdToDelete) ?? [],
-          sessionMeta: {
-            ...project.sessionMeta,
-            total: Math.max(0, (project.sessionMeta?.total as number | undefined ?? 0) - 1),
-          },
-        })),
-      );
-    },
+	      setProjects((prevProjects) =>
+	        prevProjects.map((project) => {
+	          const hadSession = [
+	            ...(project.sessions ?? []),
+	            ...(project.codexSessions ?? []),
+	            ...(project.cursorSessions ?? []),
+	            ...(project.geminiSessions ?? []),
+	          ].some((session) => session.id === sessionIdToDelete);
+
+	          return {
+	            ...project,
+	            sessions: project.sessions?.filter((session) => session.id !== sessionIdToDelete) ?? [],
+	            codexSessions: project.codexSessions?.filter((session) => session.id !== sessionIdToDelete) ?? [],
+	            cursorSessions: project.cursorSessions?.filter((session) => session.id !== sessionIdToDelete) ?? [],
+	            geminiSessions: project.geminiSessions?.filter((session) => session.id !== sessionIdToDelete) ?? [],
+	            sessionMeta: {
+	              ...project.sessionMeta,
+	              total: hadSession
+	                ? Math.max(0, (project.sessionMeta?.total as number | undefined ?? 0) - 1)
+	                : project.sessionMeta?.total,
+	            },
+	          };
+	        }),
+	      );
+	    },
     [navigate, selectedSession?.id],
   );
 

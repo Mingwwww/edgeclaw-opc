@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   AlertCircle,
   ChevronRight,
@@ -26,7 +27,7 @@ type AlwaysOnV2Props = {
 
 const POLL_INTERVAL_MS = 15_000;
 
-function formatRelative(iso: string | undefined, t: (k: string, opts?: object) => string): string {
+function formatRelative(iso: string | undefined, t: TFunction<'alwaysOn'>): string {
   if (!iso) return '—';
   const parsed = Date.parse(iso);
   if (Number.isNaN(parsed)) return '—';

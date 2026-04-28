@@ -535,8 +535,14 @@ export function useChatComposerState({
         }
       }
 
+      const pendingSessionId = pendingViewSessionRef.current?.sessionId ?? null;
+      const canResumeCurrentSession =
+        Boolean(currentSessionId) &&
+        (Boolean(selectedSession?.id) || pendingSessionId === currentSessionId);
       const effectiveSessionId =
-        currentSessionId || selectedSession?.id || sessionStorage.getItem('cursorSessionId');
+        selectedSession?.id ||
+        (canResumeCurrentSession ? currentSessionId : null) ||
+        (provider === 'cursor' ? sessionStorage.getItem('cursorSessionId') : null);
       const sessionToActivate = effectiveSessionId || createTemporarySessionId();
 
       const userMessage: ChatMessage = {

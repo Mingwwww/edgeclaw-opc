@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../../lib/utils.js';
 import { useTasksSettings } from '../../contexts/TasksSettingsContext';
 import type { ChatInterfaceProps, Provider } from '../chat/types/types';
 import {
@@ -25,7 +24,7 @@ type PendingViewSession = {
 // `ChatInterface` so streaming, file-mentions, slash commands, permissions,
 // ccr_output, task notifications, subagent containers, etc. all keep working
 // unchanged. The difference is purely in the rendered UI:
-//   · MessagesPaneV2 — avatar + markdown row layout, max-w-720px
+//   · MessagesPaneV2 — markdown row layout, GPT-like reading width
 //   · ComposerV2     — card textarea + paperclip/at + arrow-up send
 //   · NO provider picker empty state, NO pill bar, NO gradient bubbles
 function ChatInterfaceV2({
@@ -273,17 +272,8 @@ function ChatInterfaceV2({
     };
   }, [resetStreamingState]);
 
-  const providerLabel =
-    provider === 'cursor'
-      ? 'Cursor'
-      : provider === 'codex'
-        ? 'Codex'
-        : provider === 'gemini'
-          ? 'Gemini'
-          : 'edgeclaw';
-
-  // ChatGPT-style empty state. Triggered explicitly via `forceWelcome` (Home
-  // tab) and implicitly when nothing has been started yet (no session, no
+  // ChatGPT-style empty state. Triggered explicitly via `forceWelcome` and
+  // implicitly when nothing has been started yet (no session, no
   // messages, not in the middle of loading). The composer floats in the
   // middle with a welcome headline above it; once the user sends, we drop
   // into the normal layout (composer at bottom, messages on top) on the
@@ -292,10 +282,8 @@ function ChatInterfaceV2({
     !!forceWelcome ||
     (!selectedSession && !isLoadingSessionMessages && chatMessages.length === 0);
 
-  // Fire onExitWelcome the moment the user submits from welcome mode so the
-  // parent can flip the active tab from "home" to "chat" — otherwise we'd
-  // keep forcing the welcome layout over a live session. Wraps handleSubmit
-  // so we don't have to thread state through useChatComposerState.
+  // Fire onExitWelcome the moment the user submits from welcome mode. Wraps
+  // handleSubmit so we don't have to thread state through useChatComposerState.
   const wrappedSubmit = useCallback(
     (...args: unknown[]) => {
       if (isWelcomeMode && onExitWelcome) onExitWelcome();
@@ -317,13 +305,9 @@ function ChatInterfaceV2({
   ) : (
     <ComposerV2
       input={input}
-      placeholder={
-        isWelcomeMode
-          ? (t('composer.welcomePlaceholder', {
-              defaultValue: 'Ask anything…',
-            }) as string)
-          : `Message ${providerLabel}…`
-      }
+      placeholder={t('composer.placeholder', {
+        defaultValue: 'Tell EdgeClaw what you want to get done…',
+      }) as string}
       textareaRef={textareaRef}
       inputHighlightRef={inputHighlightRef}
       renderInputWithMentions={renderInputWithMentions}
@@ -386,12 +370,6 @@ function ChatInterfaceV2({
                   })}
             </h1>
             {composer}
-            <p className="mt-4 text-center text-[12px] text-neutral-500 dark:text-neutral-400">
-              {t('welcome.hint', {
-                defaultValue:
-                  'Type a message and we\u2019ll spin up a fresh session for you.',
-              })}
-            </p>
           </div>
         </div>
       </div>

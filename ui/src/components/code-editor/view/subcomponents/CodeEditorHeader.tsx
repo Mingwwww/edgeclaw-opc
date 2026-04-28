@@ -1,4 +1,4 @@
-import { Code2, Download, Eye, Maximize2, Minimize2, Save, Settings as SettingsIcon, X } from 'lucide-react';
+import { Code2, Download, Eye, Maximize2, Minimize2, Save, X } from 'lucide-react';
 import type { CodeEditorFile } from '../../types/types';
 
 type CodeEditorHeaderProps = {
@@ -10,7 +10,6 @@ type CodeEditorHeaderProps = {
   saving: boolean;
   saveSuccess: boolean;
   onToggleMarkdownPreview: () => void;
-  onOpenSettings: () => void;
   onDownload: () => void;
   onSave: () => void;
   onToggleFullscreen: () => void;
@@ -19,7 +18,6 @@ type CodeEditorHeaderProps = {
     showingChanges: string;
     editMarkdown: string;
     previewMarkdown: string;
-    settings: string;
     download: string;
     save: string;
     saving: string;
@@ -39,7 +37,6 @@ export default function CodeEditorHeader({
   saving,
   saveSuccess,
   onToggleMarkdownPreview,
-  onOpenSettings,
   onDownload,
   onSave,
   onToggleFullscreen,
@@ -60,12 +57,12 @@ export default function CodeEditorHeader({
               {file.name}
             </h3>
             {file.diffInfo && (
-              <span className="text-xxs shrink-0 whitespace-nowrap rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+              <span className="shrink-0 whitespace-nowrap rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-xxs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
                 {labels.showingChanges}
               </span>
             )}
           </div>
-          <p className="text-xxs truncate font-mono text-neutral-500 dark:text-neutral-400">
+          <p className="truncate font-mono text-xxs text-neutral-500 dark:text-neutral-400">
             {file.path}
           </p>
         </div>
@@ -90,10 +87,6 @@ export default function CodeEditorHeader({
             )}
           </button>
         )}
-
-        <button type="button" onClick={onOpenSettings} className={iconBtn} title={labels.settings}>
-          <SettingsIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
-        </button>
 
         <button type="button" onClick={onDownload} className={iconBtn} title={labels.download}>
           <Download className="h-3.5 w-3.5" strokeWidth={1.75} />

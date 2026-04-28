@@ -9,12 +9,22 @@ interface TaskItem {
 }
 
 interface TaskListContentProps {
-  content: string;
+  content: unknown;
 }
 
-function parseTaskContent(content: string): TaskItem[] {
+function stringifyTaskContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (content === undefined || content === null) return '';
+  try {
+    return typeof content === 'object' ? JSON.stringify(content, null, 2) : String(content);
+  } catch {
+    return String(content);
+  }
+}
+
+function parseTaskContent(content: unknown): TaskItem[] {
   const tasks: TaskItem[] = [];
-  const lines = content.split('\n');
+  const lines = stringifyTaskContent(content).split('\n');
 
   for (const line of lines) {
     // Match patterns like: #15. [in_progress] Subject here
@@ -71,13 +81,14 @@ const statusConfig = {
  * Parses text content from TaskList/TaskGet results
  */
 export const TaskListContent: React.FC<TaskListContentProps> = ({ content }) => {
+  const safeContent = stringifyTaskContent(content);
   const tasks = parseTaskContent(content);
 
   // If we couldn't parse any tasks, fall back to text display
   if (tasks.length === 0) {
     return (
       <pre className="whitespace-pre-wrap font-mono text-[11px] text-gray-600 dark:text-gray-400">
-        {content}
+        {safeContent}
       </pre>
     );
   }

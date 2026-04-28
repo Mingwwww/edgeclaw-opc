@@ -10,33 +10,6 @@ import MessageComponent from '../chat/view/subcomponents/MessageComponent';
 import { Markdown } from '../chat/view/subcomponents/Markdown';
 import { formatUsageLimitText } from '../chat/utils/chatFormatting';
 
-/**
- * Tiny EdgeClaw mark used as the assistant avatar — a stylised "EC"
- * monogram on a black square. Matches the brand mark shipped in
- * /public/favicon.svg so the chat avatar reads like a miniature app icon.
- */
-function EdgeClawMark({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={className}
-      role="img"
-    >
-      <rect width="24" height="24" rx="6" className="fill-neutral-900 dark:fill-neutral-50" />
-      <text
-        x="12"
-        y="16"
-        textAnchor="middle"
-        className="fill-neutral-50 dark:fill-neutral-900"
-        style={{ fontSize: 11, fontWeight: 700, fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif', letterSpacing: '-0.02em' }}
-      >
-        EC
-      </text>
-    </svg>
-  );
-}
-
 type DiffLine = { type: string; content: string; lineNum: number };
 
 type MessageRowV2Props = {
@@ -111,6 +84,7 @@ function MessageRowV2({
           showThinking={showThinking}
           selectedProject={selectedProject ?? null}
           provider={provider}
+          hideHeader
         />
       </div>
     );
@@ -119,11 +93,11 @@ function MessageRowV2({
   const isUser = message.type === 'user';
   const isError = message.type === 'error';
 
-  // ── User: right-aligned grey bubble (ChatGPT style) ─────────────────────
+  // User: right-aligned grey bubble.
   if (isUser) {
     return (
       <div className="flex w-full justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-neutral-100 px-4 py-2.5 text-[14px] leading-relaxed text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100">
+        <div className="max-w-[78%] rounded-[22px] bg-neutral-100 px-4 py-2.5 text-[14px] leading-relaxed text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100">
           {message.isStreaming && !formattedContent ? (
             <span className="inline-block h-4 w-2 animate-pulse bg-neutral-400 dark:bg-neutral-500" />
           ) : (
@@ -134,7 +108,7 @@ function MessageRowV2({
     );
   }
 
-  // ── Error: full-width red banner with warning glyph ──────────────────────
+  // Error: full-width red banner with warning glyph.
   if (isError) {
     return (
       <div className="flex gap-3">
@@ -148,19 +122,14 @@ function MessageRowV2({
     );
   }
 
-  // ── Assistant: full-width prose with EdgeClaw mark on the left ──────────
-  // No bubble — long markdown / fenced code blocks render edge-to-edge so
-  // diffs and snippets stay legible.
+  // Assistant: plain prose, no avatar and no bubble.
   return (
-    <div className="flex gap-3">
-      <EdgeClawMark className="h-7 w-7 shrink-0 rounded-md" />
-      <div className="min-w-0 flex-1 pt-0.5 text-[14px] leading-relaxed text-neutral-800 dark:text-neutral-200">
-        {message.isStreaming && !formattedContent ? (
-          <span className="inline-block h-4 w-2 animate-pulse bg-neutral-400 dark:bg-neutral-500" />
-        ) : (
-          <Markdown>{formattedContent}</Markdown>
-        )}
-      </div>
+    <div className="min-w-0 text-[14px] leading-relaxed text-neutral-900 dark:text-neutral-100">
+      {message.isStreaming && !formattedContent ? (
+        <span className="inline-block h-4 w-2 animate-pulse bg-neutral-400 dark:bg-neutral-500" />
+      ) : (
+        <Markdown>{formattedContent}</Markdown>
+      )}
     </div>
   );
 }

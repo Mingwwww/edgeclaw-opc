@@ -332,10 +332,10 @@ function mergeIndexingSettings(
     reasoningMode: partial?.reasoningMode === "accuracy_first" ? "accuracy_first" : "answer_first",
     autoIndexIntervalMinutes: typeof partial?.autoIndexIntervalMinutes === "number"
       ? Math.max(0, Math.floor(partial.autoIndexIntervalMinutes))
-      : 60,
+      : 30,
     autoDreamIntervalMinutes: typeof partial?.autoDreamIntervalMinutes === "number"
       ? Math.max(0, Math.floor(partial.autoDreamIntervalMinutes))
-      : 360,
+      : 60,
   };
 }
 

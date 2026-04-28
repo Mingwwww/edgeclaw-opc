@@ -19,13 +19,13 @@
   },
   "tabs": {
     "home": "Home",
-    "chat": "Chat",
+    "chat": "Agent",
     "alwaysOn": "Always-On",
     "shell": "Shell",
     "files": "Files",
     "git": "Source Control",
     "tasks": "Tasks",
-    "dashboard": "Dashboard",
+    "dashboard": "Routing",
     "memory": "Memory"
   },
   "newSessionInProject": "New session",

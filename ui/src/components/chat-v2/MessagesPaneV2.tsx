@@ -140,7 +140,7 @@ export default function MessagesPaneV2({
           ) : null}
         </div>
       ) : (
-        <div className="mx-auto max-w-[720px] space-y-8 px-6 py-10">
+        <div className="mx-auto max-w-[860px] space-y-8 px-6 py-10">
           {/* Loading older messages indicator */}
           {isLoadingMoreMessages && !isLoadingAllMessages && !allMessagesLoaded ? (
             <div className="py-3 text-center text-[12px] text-neutral-500 dark:text-neutral-400">

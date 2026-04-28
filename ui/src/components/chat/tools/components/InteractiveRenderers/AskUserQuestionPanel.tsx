@@ -2,12 +2,44 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { PermissionPanelProps } from '../../configs/permissionPanelRegistry';
 import type { Question } from '../../../types/types';
 
+function normalizeOption(option: unknown) {
+  if (!option || typeof option !== 'object') return null;
+  const raw = option as Record<string, unknown>;
+  const label = typeof raw.label === 'string' ? raw.label : '';
+  if (!label.trim()) return null;
+  return {
+    label,
+    description: typeof raw.description === 'string' ? raw.description : undefined,
+  };
+}
+
+function normalizeQuestion(question: unknown): Question | null {
+  if (!question || typeof question !== 'object') return null;
+  const raw = question as Record<string, unknown>;
+  const text = typeof raw.question === 'string' ? raw.question : '';
+  if (!text.trim()) return null;
+
+  return {
+    question: text,
+    header: typeof raw.header === 'string' ? raw.header : undefined,
+    options: Array.isArray(raw.options)
+      ? raw.options.map(normalizeOption).filter((option): option is NonNullable<ReturnType<typeof normalizeOption>> => Boolean(option))
+      : [],
+    multiSelect: Boolean(raw.multiSelect),
+  };
+}
+
+function normalizeQuestions(value: unknown): Question[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(normalizeQuestion).filter((question): question is Question => Boolean(question));
+}
+
 export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   request,
   onDecision,
 }) => {
-  const input = request.input as { questions?: Question[] } | undefined;
-  const questions: Question[] = input?.questions || [];
+  const input = request.input as { questions?: unknown } | undefined;
+  const questions = normalizeQuestions(input?.questions);
 
   const [currentStep, setCurrentStep] = useState(0);
   const [selections, setSelections] = useState<Map<number, Set<string>>>(() => new Map());

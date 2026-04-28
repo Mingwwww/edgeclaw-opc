@@ -21,6 +21,8 @@ build/
 .cursor/
 .claude/
 claude
+!ui/server/providers/claude/
+!ui/server/providers/claude/adapter.js
 bun.lock
 test-results/
 

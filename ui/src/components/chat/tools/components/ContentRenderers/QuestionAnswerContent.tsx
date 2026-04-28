@@ -2,9 +2,73 @@ import React, { useState } from 'react';
 import type { Question } from '../../../types/types';
 
 interface QuestionAnswerContentProps {
-  questions: Question[];
-  answers: Record<string, string>;
+  questions: unknown;
+  answers: unknown;
   className?: string;
+}
+
+function normalizeOption(option: unknown) {
+  if (!option || typeof option !== 'object') return null;
+  const raw = option as Record<string, unknown>;
+  const label = typeof raw.label === 'string' ? raw.label : '';
+  if (!label.trim()) return null;
+  return {
+    label,
+    description: typeof raw.description === 'string' ? raw.description : undefined,
+  };
+}
+
+function normalizeQuestion(question: unknown): Question | null {
+  if (!question || typeof question !== 'object') return null;
+  const raw = question as Record<string, unknown>;
+  const text = typeof raw.question === 'string' ? raw.question : '';
+  if (!text.trim()) return null;
+
+  const options = Array.isArray(raw.options)
+    ? raw.options.map(normalizeOption).filter((option): option is NonNullable<ReturnType<typeof normalizeOption>> => Boolean(option))
+    : [];
+
+  return {
+    question: text,
+    header: typeof raw.header === 'string' ? raw.header : undefined,
+    options,
+    multiSelect: Boolean(raw.multiSelect),
+  };
+}
+
+function normalizeQuestions(value: unknown): Question[] {
+  if (Array.isArray(value)) {
+    return value.map(normalizeQuestion).filter((question): question is Question => Boolean(question));
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed !== value) return normalizeQuestions(parsed);
+    } catch {
+      // Invalid tool payloads are rendered as a non-fatal warning below.
+    }
+  }
+
+  return [];
+}
+
+function normalizeAnswers(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key.trim())
+      .map(([key, answer]) => [key, typeof answer === 'string' ? answer : String(answer ?? '')]),
+  );
+}
+
+function formatInvalidPayload(value: unknown) {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 // Exception to the stateless ContentRenderer pattern: multi-question navigation requires local state.
@@ -14,18 +78,31 @@ export const QuestionAnswerContent: React.FC<QuestionAnswerContentProps> = ({
   className = '',
 }) => {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const normalizedQuestions = normalizeQuestions(questions);
+  const normalizedAnswers = normalizeAnswers(answers);
 
-  if (!questions || questions.length === 0) {
-    return null;
+  if (normalizedQuestions.length === 0) {
+    if (questions === undefined || questions === null || questions === '') {
+      return null;
+    }
+
+    return (
+      <div className={`rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/20 dark:text-amber-200 ${className}`}>
+        <div className="font-medium">Question payload could not be rendered.</div>
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[11px] opacity-80">
+          {formatInvalidPayload(questions)}
+        </pre>
+      </div>
+    );
   }
 
-  const hasAnyAnswer = Object.keys(answers || {}).length > 0;
-  const total = questions.length;
+  const hasAnyAnswer = Object.keys(normalizedAnswers).length > 0;
+  const total = normalizedQuestions.length;
 
   return (
     <div className={`space-y-2 ${className}`}>
-      {questions.map((q, idx) => {
-        const answer = answers?.[q.question];
+      {normalizedQuestions.map((q, idx) => {
+        const answer = normalizedAnswers[q.question];
         const answerLabels = answer ? answer.split(', ') : [];
         const skipped = !answer;
         const isExpanded = expandedIdx === idx;

@@ -97,7 +97,7 @@ export type ComposerV2Props = {
   /**
    * When true, the outer "footer" chrome (top divider, page bg, page padding)
    * is suppressed so this composer can be embedded inside a centered card —
-   * notably the welcome / Home tab. The inner rounded textarea card is the
+   * notably the Agent welcome state. The inner rounded textarea card is the
    * only border in that mode, avoiding the doubled-divider artifact.
    */
   chromeless?: boolean;
@@ -142,7 +142,6 @@ export default function ComposerV2({
   pendingPermissionRequests,
   handlePermissionDecision,
   handleGrantToolPermission,
-  sendByCtrlEnter,
   chromeless = false,
 }: ComposerV2Props) {
   const { t } = useTranslation('chat');
@@ -335,16 +334,6 @@ export default function ComposerV2({
             </div>
           </form>
         ) : null}
-
-        <div className="mt-2 text-center text-[11px] text-neutral-500 dark:text-neutral-400">
-          {sendByCtrlEnter
-            ? (t('input.disclaimerCtrlEnter', {
-                defaultValue: 'EdgeClaw may produce inaccurate information. ⌘↩ to send.',
-              }) as string)
-            : (t('input.disclaimer', {
-                defaultValue: 'EdgeClaw may produce inaccurate information. ↩ to send.',
-              }) as string)}
-        </div>
       </div>
     </div>
   );

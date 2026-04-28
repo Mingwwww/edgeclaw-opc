@@ -7,7 +7,7 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import crypto from 'crypto';
 import { CURSOR_MODELS } from '../../shared/modelConstants.js';
-import { applyCustomSessionNames } from '../database/db.js';
+import { applyCustomSessionNames, sessionNamesDb } from '../database/db.js';
 
 const router = express.Router();
 
@@ -576,6 +576,39 @@ router.get('/sessions', async (req, res) => {
       error: 'Failed to read Cursor sessions', 
       details: error.message 
     });
+  }
+});
+
+// DELETE /api/cursor/sessions/:sessionId - Remove a Cursor session directory
+router.delete('/sessions/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { projectPath } = req.query;
+
+    if (!sessionId || typeof sessionId !== 'string' || !/^[a-zA-Z0-9_.-]{1,100}$/.test(sessionId)) {
+      return res.status(400).json({ success: false, error: 'Invalid session ID format' });
+    }
+
+    const resolvedProjectPath =
+      typeof projectPath === 'string' && projectPath.trim()
+        ? projectPath
+        : process.cwd();
+    const cwdId = crypto.createHash('md5').update(resolvedProjectPath).digest('hex');
+    const projectChatsPath = path.join(os.homedir(), '.cursor', 'chats', cwdId);
+    const sessionPath = path.join(projectChatsPath, sessionId);
+    const resolvedProjectChatsPath = path.resolve(projectChatsPath);
+    const resolvedSessionPath = path.resolve(sessionPath);
+
+    if (!resolvedSessionPath.startsWith(`${resolvedProjectChatsPath}${path.sep}`)) {
+      return res.status(400).json({ success: false, error: 'Invalid session path' });
+    }
+
+    await fs.rm(sessionPath, { recursive: true, force: true });
+    sessionNamesDb.deleteName(sessionId, 'cursor');
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`Error deleting Cursor session ${req.params.sessionId}:`, error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

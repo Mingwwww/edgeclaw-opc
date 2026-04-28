@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ChatInterfaceV2 from '../../chat-v2/ChatInterfaceV2';
 import AlwaysOnV2 from '../../main-content-v2/AlwaysOnV2';
 import FilesV2 from '../../main-content-v2/FilesV2';
@@ -19,6 +19,7 @@ import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
 import { useUiPreferences } from '../../../hooks/useUiPreferences';
 import { useEditorSidebar } from '../../code-editor/hooks/useEditorSidebar';
 import EditorSidebar from '../../code-editor/view/EditorSidebar';
+import type { CodeEditorDiffInfo } from '../../code-editor/types/types';
 import type {
   ExecuteDiscoveryPlanResponse,
   Project,
@@ -47,6 +48,9 @@ type PendingDiscoveryExecution = {
 };
 
 const AUTO_EXECUTION_POLL_INTERVAL_MS = 15000;
+const FILES_CHAT_DEFAULT_WIDTH = 460;
+const FILES_CHAT_MIN_WIDTH = 320;
+const FILES_TREE_MIN_WIDTH = 280;
 
 function getClaudeProjectStorePath(project: Project): string {
   const projectPath = project.fullPath || project.path || '';
@@ -161,7 +165,6 @@ function MainContent({
   onReplaceTemporarySession,
   onNavigateToSession,
   onStartNewSession,
-  onSelectSession,
   onShowSettings,
   externalMessageUpdate,
 }: MainContentProps) {
@@ -534,7 +537,6 @@ function MainContent({
           ws={ws}
           sendMessage={sendMessage}
           latestMessage={latestMessage}
-          isMobile={isMobile}
           handleFileOpen={handleFileOpen}
           onInputFocusChange={onInputFocusChange}
           onSessionActive={onSessionActive}
@@ -575,13 +577,9 @@ function MainContent({
   );
 }
 
-// V2 split body: left half is always Chat (anchored, like ChatGPT-style
-// conversation pane), right half hosts the active tool. When the user is on
-// the Home or Chat tab the right pane collapses entirely so the Chat takes
-// the full width — Home shows the welcome layout, Chat shows the active
-// session in a roomy 1-column thread. For every other tab (Files, Shell,
-// Git, Always-On, Dashboard, Tasks, Memory, plugins) the right half gets a
-// vertical splitter and the corresponding tool view.
+// V2 split body: the Agent surface owns both the new-session welcome state
+// and existing transcripts. Files can pair with Agent in split view; focused
+// tools such as Always-On, Dashboard, Tasks, and Memory render full-screen.
 type SplitBodyProps = {
   selectedProject: Project;
   selectedSession: any;
@@ -592,8 +590,7 @@ type SplitBodyProps = {
   ws: any;
   sendMessage: any;
   latestMessage: any;
-  isMobile: boolean;
-  handleFileOpen: (filePath: string, diffInfo?: unknown) => void;
+  handleFileOpen: (filePath: string, diffInfo?: CodeEditorDiffInfo | null) => void;
   onInputFocusChange: any;
   onSessionActive: any;
   onSessionInactive: any;
@@ -626,7 +623,6 @@ function SplitBody(props: SplitBodyProps) {
     ws,
     sendMessage,
     latestMessage,
-    isMobile,
     handleFileOpen,
     onInputFocusChange,
     onSessionActive,
@@ -650,8 +646,8 @@ function SplitBody(props: SplitBodyProps) {
   } = props;
 
   // Render-mode taxonomy:
-  //   - 'welcome': Home tab. Chat in welcome (centered) mode, full width.
-  //   - 'chat':    Chat tab. Single full-width chat surface.
+  //   - 'chat':    Agent surface. No session shows the welcome composer;
+  //                existing sessions show the transcript.
   //   - 'split':   Files tab only. Chat on the left, file tree/editor on right.
   //   - 'tool':    Always-On / Dashboard / Memory / Tasks / Shell / Git /
   //                plugin tabs. Tool fills the whole main area, no chat
@@ -675,6 +671,55 @@ function SplitBody(props: SplitBodyProps) {
   // enabled it yet so we don't render a black hole.
   const renderTasksAsTool = activeTab === 'tasks' && shouldShowTasksTab;
   const isFiles = activeTab === 'files';
+  const filesSplitContainerRef = useRef<HTMLDivElement | null>(null);
+  const [filesChatWidth, setFilesChatWidth] = useState(FILES_CHAT_DEFAULT_WIDTH);
+  const [isFilesSplitResizing, setIsFilesSplitResizing] = useState(false);
+
+  const clampFilesChatWidth = useCallback((width: number, containerWidth: number) => {
+    const maxWidth = Math.max(FILES_CHAT_MIN_WIDTH, containerWidth - FILES_TREE_MIN_WIDTH);
+    return Math.min(Math.max(width, FILES_CHAT_MIN_WIDTH), maxWidth);
+  }, []);
+
+  const handleFilesSplitResizeStart = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!isFiles) {
+      return;
+    }
+
+    setIsFilesSplitResizing(true);
+    event.preventDefault();
+  }, [isFiles]);
+
+  useEffect(() => {
+    if (!isFilesSplitResizing) {
+      return undefined;
+    }
+
+    const handleMouseMove = (event: globalThis.MouseEvent) => {
+      const container = filesSplitContainerRef.current;
+      if (!container) {
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+      setFilesChatWidth(clampFilesChatWidth(event.clientX - rect.left, rect.width));
+    };
+
+    const handleMouseUp = () => {
+      setIsFilesSplitResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [clampFilesChatWidth, isFilesSplitResizing]);
 
   const renderTool = () => {
     if (activeTab === 'shell') {
@@ -729,14 +774,23 @@ function SplitBody(props: SplitBodyProps) {
   }
 
   return (
-    <div className={cn('flex min-h-0 min-w-0 flex-1 overflow-hidden', editorExpanded && 'hidden')}>
-      {/* Chat surface. Left half when split (files), full width otherwise.
-          Welcome mode kicks in on Home; first submit auto-flips to Chat. */}
+    <div
+      ref={isFiles ? filesSplitContainerRef : undefined}
+      className={cn('flex min-h-0 min-w-0 flex-1 overflow-hidden', editorExpanded && 'hidden')}
+    >
+      {/* Agent surface. Left half when split (files), full width otherwise.
+          With no selected session, ChatInterfaceV2 shows the welcome composer. */}
       <div
         className={cn(
           'flex min-h-0 min-w-0 flex-col',
-          isFiles ? 'w-1/2 border-r border-neutral-200 dark:border-neutral-800' : 'flex-1',
+          isFiles ? 'flex-shrink-0' : 'flex-1',
         )}
+        style={isFiles
+          ? {
+              minWidth: `${FILES_CHAT_MIN_WIDTH}px`,
+              width: `min(${filesChatWidth}px, calc(100% - ${FILES_TREE_MIN_WIDTH}px))`,
+            }
+          : undefined}
       >
         <ErrorBoundary showDetails>
           <ChatInterfaceV2
@@ -763,7 +817,7 @@ function SplitBody(props: SplitBodyProps) {
             sendByCtrlEnter={sendByCtrlEnter}
             externalMessageUpdate={externalMessageUpdate}
             onShowAllTasks={tasksEnabled ? () => setActiveTab('tasks') : null}
-            forceWelcome={activeTab === 'home'}
+            forceWelcome={false}
             onExitWelcome={() => setActiveTab('chat')}
           />
         </ErrorBoundary>
@@ -773,9 +827,22 @@ function SplitBody(props: SplitBodyProps) {
           file tree + editor). All other tools render in the full-screen
           branch above. */}
       {isFiles ? (
-        <div className="flex min-h-0 w-1/2 min-w-0 flex-col overflow-hidden">
-          <FilesV2 selectedProject={selectedProject} onFileOpen={handleFileOpen} />
-        </div>
+        <>
+          <div
+            onMouseDown={handleFilesSplitResizeStart}
+            className="group relative z-10 w-px flex-shrink-0 cursor-col-resize bg-neutral-200 transition-colors hover:bg-neutral-400 dark:bg-neutral-800 dark:hover:bg-neutral-600"
+            title="Drag to resize"
+          >
+            <div className="absolute inset-y-0 left-1/2 w-3 -translate-x-1/2" />
+            <div className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-neutral-400 opacity-0 transition-opacity group-hover:opacity-100 dark:bg-neutral-600" />
+          </div>
+          <div
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            style={{ minWidth: `${FILES_TREE_MIN_WIDTH}px` }}
+          >
+            <FilesV2 selectedProject={selectedProject} onFileOpen={handleFileOpen} />
+          </div>
+        </>
       ) : null}
     </div>
   );

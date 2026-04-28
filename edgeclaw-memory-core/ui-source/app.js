@@ -34,7 +34,9 @@ const UI_STRINGS = {
     "status.memoryExported": "记忆已导出。",
     "status.memoryImported": "记忆已导入。",
     "status.currentProjectMemoryExported": "当前项目记忆已导出。",
+    "status.currentProjectMemoryExported.general": "当前通用记忆已导出。",
     "status.currentProjectMemoryImported": "当前项目记忆已导入。",
+    "status.currentProjectMemoryImported.general": "当前通用记忆已导入。",
     "status.allProjectsMemoryExported": "全部项目记忆已导出。",
     "status.allProjectsMemoryImported": "全部项目记忆已导入。",
     "status.projectMetaUpdated": "项目元信息已更新。",
@@ -47,6 +49,7 @@ const UI_STRINGS = {
     "status.no": "否",
     "status.unknown": "未知",
     "nav.project": "项目记忆",
+    "nav.project.general": "通用记忆",
     "nav.user": "用户画像",
     "nav.trace": "记忆追踪",
     "topbar.lastIndexed": "最近索引",
@@ -59,11 +62,14 @@ const UI_STRINGS = {
     "actions.close": "关闭",
     "actions.saveSettings": "保存设置",
     "actions.exportCurrentProject": "导出当前项目记忆",
+    "actions.exportCurrentProject.general": "导出当前通用记忆",
     "actions.importCurrentProject": "导入当前项目记忆",
+    "actions.importCurrentProject.general": "导入当前通用记忆",
     "actions.exportAllProjects": "导出全部项目记忆",
     "actions.importAllProjects": "导入全部项目记忆",
     "actions.rollbackLastDream": "回滚上一次 Dream",
     "actions.clearProject": "清空当前项目记忆",
+    "actions.clearProject.general": "清空当前通用记忆",
     "actions.clearAll": "清空所有记忆",
     "actions.edit": "编辑",
     "actions.view": "查看",
@@ -73,11 +79,15 @@ const UI_STRINGS = {
     "actions.cancel": "取消",
     "actions.save": "保存",
     "project.section.title": "项目记忆",
+    "project.section.title.general": "通用记忆",
     "project.section.subtitle": "当前 project 的进展、事实和状态记录",
+    "project.section.subtitle.general": "通用对话中的事实、偏好和上下文记录",
     "feedback.section.title": "协作反馈",
     "feedback.section.subtitle": "用户对当前 project 的偏好、约束和交付规则",
+    "feedback.section.subtitle.general": "通用对话中的偏好、约束和交付规则",
     "deprecated.section.title": "已弃用",
     "deprecated.section.subtitle": "已标记为弃用的项目记忆与协作反馈",
+    "deprecated.section.subtitle.general": "已标记为弃用的通用记忆与协作反馈",
     "user.section.title": "用户画像",
     "user.section.subtitle": "长期身份背景信息",
     "trace.tab.recall": "Recall",
@@ -107,7 +117,9 @@ const UI_STRINGS = {
     "trace.dream.explanation": "Dream 追踪展示的是合并、重写和删除过程；主视图展示的是 Dream 完成后的当前文件状态。",
     "route.user": "用户",
     "route.project": "项目",
+    "route.project.general": "通用",
     "route.mix": "项目 + 用户",
+    "route.mix.general": "通用 + 用户",
     "route.none": "无",
     "trigger.manual": "手动",
     "trigger.scheduled": "自动",
@@ -119,31 +131,33 @@ const UI_STRINGS = {
     "displayStatus.skipped": "跳过",
     "project.context.defaultDescription": "当前打开的 workspace 就是唯一顶层 project。",
     "project.context.statusChip": "状态 {0}",
-    "project.context.projectMemoryChip": "项目记忆 {0}",
-    "project.context.feedbackChip": "协作反馈 {0}",
     "project.context.pathChip": "项目路径 {0}",
+    "project.context.pathChip.general": "来源路径 {0}",
     "project.currentProject": "当前项目",
-    "project.general.title": "General 项目目录",
+    "project.currentProject.general": "当前通用空间",
+    "project.general.title": "通用主题",
     "project.general.subtitle": "",
-    "project.general.empty": "当前 General 还没有形成项目。",
-    "project.general.noneSelected": "当前没有选中的项目。",
-    "project.general.selected": "当前选中",
-    "project.general.source.general_local": "General 本地",
+    "project.general.empty": "当前还没有形成通用主题。",
+    "project.general.noneSelected": "当前没有选中的通用主题。",
+    "project.general.selected": "当前主题",
+    "project.general.source.general_local": "通用本地",
     "project.general.source.workspace_external": "外部只读",
-    "project.general.source.workspace_external_mirror": "General 本地",
+    "project.general.source.workspace_external_mirror": "通用本地",
     "project.general.source.externalEntry": "外部来源",
-    "project.general.source.localOverlay": "General 本地",
+    "project.general.source.localOverlay": "通用本地",
     "project.general.readOnly": "只读",
     "project.general.hasLocalMirror": "已有本地镜像",
     "project.general.select": "查看",
     "user.identityBackground": "身份背景",
     "user.emptySummary": "当前还没有汇总后的用户画像；User Notes 会在 Dream 后合并到这里。",
     "workspace.empty.project": "当前没有项目记忆。",
+    "workspace.empty.project.general": "当前没有通用记忆。",
     "workspace.empty.feedback": "当前没有协作反馈。",
     "workspace.empty.deprecated": "当前没有已弃用记忆。",
     "record.badge.deprecated": "已弃用",
     "record.badge.feedback": "反馈",
     "record.badge.project": "项目",
+    "record.badge.project.general": "通用",
     "detail.title": "详情",
     "detail.empty": "选择一条记忆查看详情。",
     "detail.meta": "{0} · {1}",
@@ -170,16 +184,20 @@ const UI_STRINGS = {
     "settings.unit.hours": "小时",
     "settings.dataManagement.title": "数据管理",
     "settings.data.currentProject": "当前项目",
+    "settings.data.currentProject.general": "当前通用记忆",
     "settings.data.allMemory": "全部记忆",
     "settings.snapshot.none": "还没有可用的 Dream 快照。",
     "settings.snapshot.ready": "可回滚",
     "settings.snapshot.stale": "快照已失效",
     "settings.snapshot.meta": "快照：{0} · 来源：{1} · {2}",
     "confirm.importCurrentProject": "导入将覆盖当前项目记忆，但不会影响其他项目，也不会修改工作区代码文件。确认继续吗？",
+    "confirm.importCurrentProject.general": "导入将覆盖当前通用记忆，但不会影响其他项目，也不会修改工作区代码文件。确认继续吗？",
     "confirm.importAllProjects": "导入将覆盖全部项目记忆和全局用户画像，但不会修改工作区代码文件。确认继续吗？",
     "confirm.rollbackLastDream": "回滚将恢复上一次 Dream 前的记忆快照，并覆盖当前项目记忆与全局用户画像中的 Dream 结果。不会修改工作区代码文件。确认继续吗？",
+    "confirm.rollbackLastDream.general": "回滚将恢复上一次 Dream 前的记忆快照，并覆盖当前通用记忆与全局用户画像中的 Dream 结果。不会修改工作区代码文件。确认继续吗？",
     "confirm.deleteMemory": "确认删除 {0}？",
     "confirm.clearProject": "确认清空当前项目的全部记忆吗？这不会删除全局用户身份背景。",
+    "confirm.clearProject.general": "确认清空当前通用空间的全部记忆吗？这不会删除全局用户身份背景。",
     "confirm.clearAll": "确认清空所有记忆吗？这会删除所有项目记忆以及全局用户身份背景。",
     "prompt.editMemoryName": "更新记忆名称",
     "prompt.editMemoryDescription": "更新记忆描述",
@@ -187,12 +205,19 @@ const UI_STRINGS = {
     "prompt.editProjectDescription": "更新项目描述",
     "prompt.editProjectStatus": "更新项目状态",
     "editor.project.title": "编辑项目信息",
+    "editor.project.title.general": "编辑通用主题",
     "editor.project.subtitle": "修改项目 meta，不会直接重写已有记忆正文。",
+    "editor.project.subtitle.general": "修改通用主题信息，不会直接重写已有记忆正文。",
     "editor.project.name": "项目名称",
+    "editor.project.name.general": "主题名称",
     "editor.project.description": "项目摘要",
+    "editor.project.description.general": "主题摘要",
     "editor.project.status": "项目状态",
+    "editor.project.status.general": "主题状态",
     "editor.project.save": "保存项目信息",
+    "editor.project.save.general": "保存主题信息",
     "editor.memory.title.project": "编辑项目记忆",
+    "editor.memory.title.project.general": "编辑通用记忆",
     "editor.memory.title.feedback": "编辑协作反馈",
     "editor.memory.subtitle": "只编辑头字段，不直接暴露原始 markdown。",
     "editor.memory.name": "记忆名称",
@@ -202,6 +227,7 @@ const UI_STRINGS = {
     "editor.status.in_progress": "进行中",
     "editor.status.done": "已完成",
     "editor.error.projectNameRequired": "项目名称不能为空。",
+    "editor.error.projectNameRequired.general": "主题名称不能为空。",
     "editor.error.memoryNameRequired": "记忆名称不能为空。",
     "actions.back": "← 返回",
     "error.authRequired": "需要登录后才能访问当前项目的 Memory Dashboard。",
@@ -230,7 +256,9 @@ const UI_STRINGS = {
     "status.memoryExported": "Memory exported.",
     "status.memoryImported": "Memory imported.",
     "status.currentProjectMemoryExported": "Current project memory exported.",
+    "status.currentProjectMemoryExported.general": "Current general memory exported.",
     "status.currentProjectMemoryImported": "Current project memory imported.",
+    "status.currentProjectMemoryImported.general": "Current general memory imported.",
     "status.allProjectsMemoryExported": "All-project memory exported.",
     "status.allProjectsMemoryImported": "All-project memory imported.",
     "status.projectMetaUpdated": "Project metadata updated.",
@@ -243,6 +271,7 @@ const UI_STRINGS = {
     "status.no": "No",
     "status.unknown": "Unknown",
     "nav.project": "Project Memory",
+    "nav.project.general": "General Memory",
     "nav.user": "User Profile",
     "nav.trace": "Memory Traces",
     "topbar.lastIndexed": "Last indexed",
@@ -255,11 +284,14 @@ const UI_STRINGS = {
     "actions.close": "Close",
     "actions.saveSettings": "Save Settings",
     "actions.exportCurrentProject": "Export Current Project Memory",
+    "actions.exportCurrentProject.general": "Export Current General Memory",
     "actions.importCurrentProject": "Import Current Project Memory",
+    "actions.importCurrentProject.general": "Import Current General Memory",
     "actions.exportAllProjects": "Export All Projects Memory",
     "actions.importAllProjects": "Import All Projects Memory",
     "actions.rollbackLastDream": "Rollback Last Dream",
     "actions.clearProject": "Clear Current Project Memory",
+    "actions.clearProject.general": "Clear Current General Memory",
     "actions.clearAll": "Clear All Memory",
     "actions.edit": "Edit",
     "actions.view": "View",
@@ -269,11 +301,15 @@ const UI_STRINGS = {
     "actions.cancel": "Cancel",
     "actions.save": "Save",
     "project.section.title": "Project Memory",
+    "project.section.title.general": "General Memory",
     "project.section.subtitle": "Progress, facts, and status records for the current project.",
+    "project.section.subtitle.general": "Facts, preferences, and context from general conversations.",
     "feedback.section.title": "Collaboration Feedback",
     "feedback.section.subtitle": "Preferences, constraints, and delivery rules for the current project.",
+    "feedback.section.subtitle.general": "Preferences, constraints, and delivery rules from general conversations.",
     "deprecated.section.title": "Deprecated",
     "deprecated.section.subtitle": "Project memory and collaboration feedback marked as deprecated.",
+    "deprecated.section.subtitle.general": "General memory and collaboration feedback marked as deprecated.",
     "user.section.title": "User Profile",
     "user.section.subtitle": "Long-term identity background information.",
     "trace.tab.recall": "Recall",
@@ -303,7 +339,9 @@ const UI_STRINGS = {
     "trace.dream.explanation": "Dream traces show merge, rewrite, and deletion steps; the main board shows the current file state after Dream completes.",
     "route.user": "User",
     "route.project": "Project",
+    "route.project.general": "General",
     "route.mix": "Project + User",
+    "route.mix.general": "General + User",
     "route.none": "None",
     "trigger.manual": "Manual",
     "trigger.scheduled": "Scheduled",
@@ -315,15 +353,15 @@ const UI_STRINGS = {
     "displayStatus.skipped": "Skipped",
     "project.context.defaultDescription": "The current workspace is the only top-level project.",
     "project.context.statusChip": "Status {0}",
-    "project.context.projectMemoryChip": "Project Memory {0}",
-    "project.context.feedbackChip": "Collaboration Feedback {0}",
     "project.context.pathChip": "Project Path {0}",
+    "project.context.pathChip.general": "Source Path {0}",
     "project.currentProject": "Current Project",
-    "project.general.title": "General Project Catalog",
+    "project.currentProject.general": "Current General Space",
+    "project.general.title": "General Topics",
     "project.general.subtitle": "",
-    "project.general.empty": "No projects have been formed in General yet.",
-    "project.general.noneSelected": "No project is currently selected.",
-    "project.general.selected": "Selected",
+    "project.general.empty": "No general topics have been formed yet.",
+    "project.general.noneSelected": "No general topic is currently selected.",
+    "project.general.selected": "Current Topic",
     "project.general.source.general_local": "General Local",
     "project.general.source.workspace_external": "External Read-only",
     "project.general.source.workspace_external_mirror": "General Local",
@@ -335,11 +373,13 @@ const UI_STRINGS = {
     "user.identityBackground": "Identity Background",
     "user.emptySummary": "No consolidated user profile yet. User Notes will be merged here after Dream.",
     "workspace.empty.project": "No project memory yet.",
+    "workspace.empty.project.general": "No general memory yet.",
     "workspace.empty.feedback": "No collaboration feedback yet.",
     "workspace.empty.deprecated": "No deprecated memory yet.",
     "record.badge.deprecated": "Deprecated",
     "record.badge.feedback": "Feedback",
     "record.badge.project": "Project",
+    "record.badge.project.general": "General",
     "detail.title": "Details",
     "detail.empty": "Select a memory item to inspect details.",
     "detail.meta": "{0} · {1}",
@@ -366,16 +406,20 @@ const UI_STRINGS = {
     "settings.unit.hours": "Hours",
     "settings.dataManagement.title": "Data Management",
     "settings.data.currentProject": "Current Project",
+    "settings.data.currentProject.general": "Current General Memory",
     "settings.data.allMemory": "All Memory",
     "settings.snapshot.none": "No Dream snapshot is available yet.",
     "settings.snapshot.ready": "Rollback ready",
     "settings.snapshot.stale": "Snapshot stale",
     "settings.snapshot.meta": "Snapshot: {0} · Source: {1} · {2}",
     "confirm.importCurrentProject": "Importing will overwrite the current project's memory, but it will not affect other projects or modify workspace code files. Continue?",
+    "confirm.importCurrentProject.general": "Importing will overwrite the current general memory, but it will not affect other projects or modify workspace code files. Continue?",
     "confirm.importAllProjects": "Importing will overwrite all project memory and the global user profile, but it will not modify workspace code files. Continue?",
     "confirm.rollbackLastDream": "Rollback will restore the memory snapshot from before the last Dream and overwrite the current project's Dream results plus the global user profile updates. It will not modify workspace code files. Continue?",
+    "confirm.rollbackLastDream.general": "Rollback will restore the memory snapshot from before the last Dream and overwrite the current general memory plus the global user profile updates. It will not modify workspace code files. Continue?",
     "confirm.deleteMemory": "Delete {0}?",
     "confirm.clearProject": "Clear all memory for the current project? This will not delete global user identity background.",
+    "confirm.clearProject.general": "Clear all memory for the current general space? This will not delete global user identity background.",
     "confirm.clearAll": "Clear all memory? This will delete all project memory and global user identity background.",
     "prompt.editMemoryName": "Update memory name",
     "prompt.editMemoryDescription": "Update memory description",
@@ -383,12 +427,19 @@ const UI_STRINGS = {
     "prompt.editProjectDescription": "Update project description",
     "prompt.editProjectStatus": "Update project status",
     "editor.project.title": "Edit Project Info",
+    "editor.project.title.general": "Edit General Topic",
     "editor.project.subtitle": "Update project metadata without rewriting existing memory bodies.",
+    "editor.project.subtitle.general": "Update general topic info without rewriting existing memory bodies.",
     "editor.project.name": "Project Name",
+    "editor.project.name.general": "Topic Name",
     "editor.project.description": "Project Summary",
+    "editor.project.description.general": "Topic Summary",
     "editor.project.status": "Project Status",
+    "editor.project.status.general": "Topic Status",
     "editor.project.save": "Save Project Info",
+    "editor.project.save.general": "Save Topic Info",
     "editor.memory.title.project": "Edit Project Memory",
+    "editor.memory.title.project.general": "Edit General Memory",
     "editor.memory.title.feedback": "Edit Collaboration Feedback",
     "editor.memory.subtitle": "Edit only header fields without exposing raw markdown.",
     "editor.memory.name": "Memory Name",
@@ -398,6 +449,7 @@ const UI_STRINGS = {
     "editor.status.in_progress": "In Progress",
     "editor.status.done": "Done",
     "editor.error.projectNameRequired": "Project name is required.",
+    "editor.error.projectNameRequired.general": "Topic name is required.",
     "editor.error.memoryNameRequired": "Memory name is required.",
     "actions.back": "← Back",
     "error.authRequired": "Sign in to access the Memory Dashboard for the current project.",
@@ -426,7 +478,7 @@ const TRACE_LOCALES = {
     "trace.step.context_rendered": "上下文已渲染",
     "trace.step.dream_start": "开始 Dream",
     "trace.step.snapshot_loaded": "快照已加载",
-    "trace.step.general_project_merge": "General 项目合并",
+    "trace.step.general_project_merge": "通用主题合并",
     "trace.step.dream_finished": "Dream 完成",
     "trace.step.project_meta_review": "项目元信息审查",
     "trace.step.user_profile_rewritten": "用户画像已重写",
@@ -484,6 +536,19 @@ function t(key, ...args) {
   return formatMessage(template, ...args);
 }
 
+function hasTranslation(key) {
+  return UI_STRINGS[MEMORY_LOCALE]?.[key] !== undefined || UI_STRINGS.en[key] !== undefined;
+}
+
+function scopedKey(key) {
+  const generalKey = `${key}.general`;
+  return isGeneralWorkspace() && hasTranslation(generalKey) ? generalKey : key;
+}
+
+function ts(key, ...args) {
+  return t(scopedKey(key), ...args);
+}
+
 const state = {
   token: params.get("token") || "",
   projectPath: params.get("projectPath") || "",
@@ -518,9 +583,6 @@ const appScrimEl = document.getElementById("appScrim");
 const activityTextEl = document.getElementById("activityText");
 const statusBarEl = document.getElementById("statusBar");
 const navLastIndexedEl = document.getElementById("navLastIndexed");
-const navProjectCountEl = document.getElementById("navProjectCount");
-const navUserCountEl = document.getElementById("navUserCount");
-const navTraceCountEl = document.getElementById("navTraceCount");
 const boardNavTabs = Array.from(document.querySelectorAll(".nav-tab[data-page]"));
 const traceSubTabs = Array.from(document.querySelectorAll(".trace-tab[data-trace]"));
 const settingsToggleBtn = document.getElementById("settingsToggleBtn");
@@ -551,19 +613,14 @@ const userBoardEl = document.getElementById("userBoard");
 const traceBoardEl = document.getElementById("traceBoard");
 const projectContextSectionEl = document.getElementById("projectContextSection");
 const projectEntriesEl = document.getElementById("projectEntries");
-const projectEntriesCountEl = document.getElementById("projectEntriesCount");
 const feedbackEntriesSectionEl = document.getElementById("feedbackEntriesSection");
 const feedbackEntriesEl = document.getElementById("feedbackEntries");
-const feedbackEntriesCountEl = document.getElementById("feedbackEntriesCount");
 const deprecatedEntriesSectionEl = document.getElementById("deprecatedEntriesSection");
 const deprecatedEntriesEl = document.getElementById("deprecatedEntries");
-const deprecatedEntriesCountEl = document.getElementById("deprecatedEntriesCount");
 const userSummaryEl = document.getElementById("userSummary");
-const userSummaryCountEl = document.getElementById("userSummaryCount");
 
 const recallPanelEl = document.getElementById("recallPanel");
 const recallCaseSelectEl = document.getElementById("recallCaseSelect");
-const recallTraceCountEl = document.getElementById("recallTraceCount");
 const recallDetailEl = document.getElementById("recallDetail");
 const recallEmptyEl = document.getElementById("recallEmpty");
 const recallMetaTableEl = document.getElementById("recallMetaTable");
@@ -574,14 +631,12 @@ const recallStepsEl = document.getElementById("recallSteps");
 
 const indexPanelEl = document.getElementById("indexPanel");
 const indexTraceSelectEl = document.getElementById("indexTraceSelect");
-const indexTraceCountEl = document.getElementById("indexTraceCount");
 const indexDetailEl = document.getElementById("indexDetail");
 const indexEmptyEl = document.getElementById("indexEmpty");
 const indexStepsEl = document.getElementById("indexSteps");
 
 const dreamPanelEl = document.getElementById("dreamPanel");
 const dreamTraceSelectEl = document.getElementById("dreamTraceSelect");
-const dreamTraceCountEl = document.getElementById("dreamTraceCount");
 const dreamDetailEl = document.getElementById("dreamDetail");
 const dreamEmptyEl = document.getElementById("dreamEmpty");
 const dreamStepsEl = document.getElementById("dreamSteps");
@@ -636,14 +691,16 @@ const SETTINGS_FIELD_CONFIG = {
     unitEl: settingAutoIndexUnitEl,
     storageKey: SETTINGS_UNIT_STORAGE_KEYS.autoIndex,
     settingsKey: "autoIndexIntervalMinutes",
-    defaultMinutes: 60,
+    defaultMinutes: 30,
+    defaultUnit: "minutes",
   },
   autoDream: {
     inputEl: settingAutoDreamEl,
     unitEl: settingAutoDreamUnitEl,
     storageKey: SETTINGS_UNIT_STORAGE_KEYS.autoDream,
     settingsKey: "autoDreamIntervalMinutes",
-    defaultMinutes: 360,
+    defaultMinutes: 60,
+    defaultUnit: "hours",
   },
 };
 
@@ -657,9 +714,9 @@ function readSettingsUnitPreference(fieldKey) {
   const config = SETTINGS_FIELD_CONFIG[fieldKey];
   if (!config) return "hours";
   try {
-    return normalizeSettingsUnit(window.localStorage.getItem(config.storageKey) || "hours");
+    return normalizeSettingsUnit(window.localStorage.getItem(config.storageKey) || config.defaultUnit || "hours");
   } catch {
-    return "hours";
+    return normalizeSettingsUnit(config.defaultUnit || "hours");
   }
 }
 
@@ -749,6 +806,27 @@ function applyStaticTranslations() {
   });
 }
 
+function applyScopedTranslations() {
+  [
+    "nav.project",
+    "project.section.title",
+    "project.section.subtitle",
+    "feedback.section.subtitle",
+    "deprecated.section.subtitle",
+    "settings.data.currentProject",
+    "actions.exportCurrentProject",
+    "actions.importCurrentProject",
+    "actions.clearProject",
+    "editor.project.name",
+    "editor.project.description",
+    "editor.project.status",
+  ].forEach((key) => {
+    document.querySelectorAll(`[data-i18n="${key}"]`).forEach((node) => {
+      node.textContent = ts(key);
+    });
+  });
+}
+
 function setActivity(msg = DEFAULT_ACTIVITY) { activityTextEl.textContent = msg || DEFAULT_ACTIVITY; }
 
 function updateAppScrim() {
@@ -785,13 +863,13 @@ function formatRecallRoute(route) {
     case "user":
       return t("route.user");
     case "project":
-      return t("route.project");
+      return ts("route.project");
     case "mix":
-      return t("route.mix");
+      return ts("route.mix");
     case "none":
       return t("route.none");
     case "project_memory":
-      return t("route.project");
+      return ts("route.project");
     default:
       return route || t("route.none");
   }
@@ -913,14 +991,14 @@ function renderEmpty(t, text) { clearNode(t); t.append(el("div", "empty-state", 
 
 function formatDateTime(v) { if (!v) return "—"; const d = new Date(v); if (Number.isNaN(d.getTime())) return v; return d.toLocaleString(DATE_TIME_LOCALE); }
 function stringifyDetail(v) { return typeof v === "string" ? v : JSON.stringify(v, null, 2); }
-function basename(v) { const s = String(v || "").replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean); return s[s.length - 1] || v || t("project.currentProject"); }
+function basename(v) { const s = String(v || "").replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean); return s[s.length - 1] || v || ts("project.currentProject"); }
 
 function formatEntryType(type) {
   switch (type) {
     case "feedback":
       return t("record.badge.feedback");
     case "project":
-      return t("record.badge.project");
+      return ts("record.badge.project");
     case "general_project_meta":
       return t("project.general.title");
     default:
@@ -964,12 +1042,6 @@ function syncSelectedProjectIdFromWorkspace() {
   return false;
 }
 
-function getProjectCardCount() {
-  return isGeneralWorkspace()
-    ? getVisibleGeneralProjects().length
-    : state.workspace?.projectEntries?.length || 0;
-}
-
 function formatProjectSource(sourceType) {
   const displaySource = sourceType === "workspace_external" ? "workspace_external" : "general_local";
   return t(`project.general.source.${displaySource}`);
@@ -987,11 +1059,6 @@ function buildWorkspaceRequestPath(basePath) {
   const query = search.toString();
   return query ? `${basePath}${basePath.includes("?") ? "&" : "?"}${query}` : basePath;
 }
-function countUserSummaryRecords(s) {
-  if (!s) return 0;
-  return s.identityBackground?.length ? 1 : 0;
-}
-
 function formatLastDreamSnapshotSource(snapshot) {
   if (!snapshot) return t("status.unknown");
   if (snapshot.sourceAction === "rollback") return t("trigger.rollback");
@@ -1021,16 +1088,6 @@ function syncMaintenanceActionState() {
 }
 
 function updateCounts() {
-  navProjectCountEl.textContent = String(getProjectCardCount());
-  navUserCountEl.textContent = String(countUserSummaryRecords(state.userSummary));
-  navTraceCountEl.textContent = String(state.caseTraces.length + state.indexTraces.length + state.dreamTraces.length);
-  projectEntriesCountEl.textContent = String(state.workspace?.projectEntries?.length || 0);
-  feedbackEntriesCountEl.textContent = String(state.workspace?.feedbackEntries?.length || 0);
-  deprecatedEntriesCountEl.textContent = String((state.workspace?.deprecatedProjectEntries?.length || 0) + (state.workspace?.deprecatedFeedbackEntries?.length || 0));
-  userSummaryCountEl.textContent = String(countUserSummaryRecords(state.userSummary));
-  recallTraceCountEl.textContent = String(state.caseTraces.length);
-  indexTraceCountEl.textContent = String(state.indexTraces.length);
-  dreamTraceCountEl.textContent = String(state.dreamTraces.length);
   navLastIndexedEl.textContent = formatDateTime(state.overview?.lastIndexedAt || "") === "—" ? t("status.waitingForIndex") : formatDateTime(state.overview?.lastIndexedAt || "");
   syncMaintenanceActionState();
 }
@@ -1129,15 +1186,17 @@ function openEditorModal(session) {
   editorMemoryFieldsEl.classList.toggle("hidden", session.kind === "project-meta");
 
   if (session.kind === "project-meta") {
-    editorModalTitleEl.textContent = t("editor.project.title");
-    editorModalSubtitleEl.textContent = t("editor.project.subtitle");
-    editorSaveBtn.textContent = t("editor.project.save");
+    editorModalTitleEl.textContent = ts("editor.project.title");
+    editorModalSubtitleEl.textContent = ts("editor.project.subtitle");
+    editorSaveBtn.textContent = ts("editor.project.save");
     editorProjectNameEl.value = session.projectName;
     editorProjectDescriptionEl.value = session.description;
     populateProjectStatusOptions(session.status);
     editorProjectNameEl.focus();
   } else {
-    editorModalTitleEl.textContent = t(`editor.memory.title.${session.record.type}`);
+    editorModalTitleEl.textContent = session.record.type === "project"
+      ? ts("editor.memory.title.project")
+      : t(`editor.memory.title.${session.record.type}`);
     editorModalSubtitleEl.textContent = t("editor.memory.subtitle");
     editorSaveBtn.textContent = t("editor.memory.save");
     editorMemoryNameEl.value = session.record.name || "";
@@ -1168,58 +1227,48 @@ function renderProjectContext() {
       || projects[0]
       || null;
 
-    const header = el("div", "project-context-head");
-    const copy = el("div", "project-context-copy");
-    copy.append(el("h4", "", t("project.general.title")));
-    const subtitle = t("project.general.subtitle");
-    if (subtitle) copy.append(el("p", "", subtitle));
-    header.append(copy);
-    projectContextSectionEl.append(header);
-
     if (!projects.length) {
+      const header = el("div", "project-context-head");
+      const copy = el("div", "project-context-copy");
+      copy.append(el("h4", "", t("project.general.title")));
+      const subtitle = t("project.general.subtitle");
+      if (subtitle) copy.append(el("p", "", subtitle));
+      header.append(copy);
+      projectContextSectionEl.append(header);
       projectContextSectionEl.append(el("div", "empty-state", t("project.general.empty")));
       return;
     }
-
-    const picker = el("div", "project-selector-grid");
-    projects.forEach((project) => {
-      const card = el("button", "project-selector-card");
-      card.type = "button";
-      if (project.logicalProjectId === state.selectedProjectId) card.classList.add("active");
-
-      const cardHead = el("div", "entry-head");
-      cardHead.append(el("h4", "", project.projectName));
-      card.append(cardHead);
-
-      card.append(el("div", "entry-meta", `${formatDateTime(project.updatedAt)} · ${project.workspaceName}`));
-      card.append(el("div", "", project.description || t("detail.noDescription")));
-
-      const chips = el("div", "project-context-meta");
-      [
-        t("project.context.projectMemoryChip", project.summary?.projectEntries || 0),
-        t("project.context.feedbackChip", project.summary?.feedbackEntries || 0),
-        project.readOnly ? t("project.general.readOnly") : "",
-        project.hasLocalMirror ? t("project.general.hasLocalMirror") : "",
-      ].filter(Boolean).forEach((text) => chips.append(el("span", "context-chip", text)));
-      card.append(chips);
-
-      card.addEventListener("click", () => {
-        state.selectedProjectId = project.logicalProjectId;
-        void loadWorkspace();
-      });
-      picker.append(card);
-    });
-    projectContextSectionEl.append(picker);
 
     if (!selectedProject) {
       projectContextSectionEl.append(el("div", "empty-state", t("project.general.noneSelected")));
       return;
     }
 
-    const selectedCard = el("div", "project-context-summary");
+    const selectedCard = el("div", "project-context-summary project-context-summary--selector");
     const selectedHead = el("div", "project-context-head");
     const selectedCopy = el("div", "project-context-copy");
-    selectedCopy.append(el("h4", "", `${t("project.general.selected")} · ${selectedProject.projectName}`));
+    const topicRow = el("div", "project-topic-select-row");
+    topicRow.append(el("span", "project-topic-select-label", `${t("project.general.selected")} ·`));
+
+    const selectWrap = el("span", "project-topic-select-wrap");
+    const topicSelect = document.createElement("select");
+    topicSelect.className = "project-topic-select";
+    topicSelect.setAttribute("aria-label", t("project.general.select"));
+    topicSelect.title = t("project.general.select");
+    projects.forEach((project) => {
+      const option = document.createElement("option");
+      option.value = project.logicalProjectId;
+      option.textContent = project.projectName;
+      option.selected = project.logicalProjectId === selectedProject.logicalProjectId;
+      topicSelect.append(option);
+    });
+    topicSelect.addEventListener("change", () => {
+      state.selectedProjectId = topicSelect.value;
+      void loadWorkspace();
+    });
+    selectWrap.append(topicSelect);
+    topicRow.append(selectWrap);
+    selectedCopy.append(topicRow);
     selectedCopy.append(el("p", "", selectedProject.description || t("detail.noDescription")));
     selectedHead.append(selectedCopy);
     if (!selectedProject.readOnly) {
@@ -1232,9 +1281,7 @@ function renderProjectContext() {
     const meta = el("div", "project-context-meta");
     [
       t("project.context.statusChip", formatProjectStatusLabel(selectedProject.status || "in_progress")),
-      t("project.context.projectMemoryChip", state.workspace?.projectEntries?.length || 0),
-      t("project.context.feedbackChip", state.workspace?.feedbackEntries?.length || 0),
-      t("project.context.pathChip", basename(selectedProject.workspacePath || state.projectPath)),
+      ts("project.context.pathChip", basename(selectedProject.workspacePath || state.projectPath)),
       selectedProject.readOnly ? t("project.general.readOnly") : "",
     ].filter(Boolean).forEach((text) => meta.append(el("span", "context-chip", text)));
     selectedCard.append(meta);
@@ -1260,9 +1307,7 @@ function renderProjectContext() {
   const meta = el("div", "project-context-meta");
   [
     t("project.context.statusChip", formatProjectStatusLabel(pm?.status || "in_progress")),
-    t("project.context.projectMemoryChip", state.workspace?.projectEntries?.length || 0),
-    t("project.context.feedbackChip", state.workspace?.feedbackEntries?.length || 0),
-    t("project.context.pathChip", basename(state.projectPath)),
+    ts("project.context.pathChip", basename(state.projectPath)),
   ].forEach((text) => meta.append(el("span", "context-chip", text)));
   projectContextSectionEl.append(meta);
 }
@@ -1352,7 +1397,7 @@ function buildEntryCard(record) {
   card.dataset.kind = record.deprecated ? "deprecated" : record.type;
   const head = el("div", "entry-head");
   head.append(el("h4", "", record.name));
-  const badge = el("span", "entry-badge", record.deprecated ? t("record.badge.deprecated") : record.type === "feedback" ? t("record.badge.feedback") : t("record.badge.project"));
+  const badge = el("span", "entry-badge", record.deprecated ? t("record.badge.deprecated") : record.type === "feedback" ? t("record.badge.feedback") : ts("record.badge.project"));
   badge.dataset.kind = record.deprecated ? "deprecated" : record.type;
   head.append(badge);
   card.append(head);
@@ -1364,11 +1409,12 @@ function buildEntryCard(record) {
 
 function renderWorkspace() {
   const ws = state.workspace;
+  applyScopedTranslations();
   renderProjectContext();
   const pe = ws?.projectEntries || [], fe = ws?.feedbackEntries || [];
   const de = [...(ws?.deprecatedProjectEntries || []), ...(ws?.deprecatedFeedbackEntries || [])];
   clearNode(projectEntriesEl);
-  if (!pe.length) renderEmpty(projectEntriesEl, t("workspace.empty.project"));
+  if (!pe.length) renderEmpty(projectEntriesEl, ts("workspace.empty.project"));
   else pe.forEach((r) => projectEntriesEl.append(buildEntryCard(r)));
   feedbackEntriesSectionEl.classList.toggle("hidden", !fe.length && !state.workspaceQuery);
   clearNode(feedbackEntriesEl);
@@ -1801,7 +1847,7 @@ async function exportCurrentProjectMemory() {
   await exportBundle(
     ["/api/memory/export/current-project", "/api/memory/export"],
     buildDownloadName("edgeclaw-memory-current-project"),
-    "status.currentProjectMemoryExported",
+    scopedKey("status.currentProjectMemoryExported"),
   );
 }
 
@@ -1814,8 +1860,8 @@ async function exportAllProjectsMemory() {
 }
 
 async function clearCurrentProjectMemory() {
-  if (!window.confirm(t("confirm.clearProject"))) return;
-  await runAction(t("actions.clearProject"), "/api/memory/clear", { scope: "current_project" });
+  if (!window.confirm(ts("confirm.clearProject"))) return;
+  await runAction(ts("actions.clearProject"), "/api/memory/clear", { scope: "current_project" });
 }
 
 async function clearAllMemory() {
@@ -1824,7 +1870,7 @@ async function clearAllMemory() {
 }
 
 async function rollbackLastDream() {
-  if (!window.confirm(t("confirm.rollbackLastDream"))) return;
+  if (!window.confirm(ts("confirm.rollbackLastDream"))) return;
   closeSettingsDrawer();
   try {
     await runAction(
@@ -1853,7 +1899,7 @@ async function editProjectMeta() {
 async function saveProjectMetaFromEditor() {
   const projectName = editorProjectNameEl.value.trim();
   if (!projectName) {
-    showEditorError(t("editor.error.projectNameRequired"));
+    showEditorError(ts("editor.error.projectNameRequired"));
     editorProjectNameEl.focus();
     return;
   }
@@ -1971,7 +2017,14 @@ workspaceSearchBtn.addEventListener("click", () => { state.workspaceQuery = work
 
 importCurrentProjectInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0]; if (!file) return;
-  try { await importBundle(file, ["/api/memory/import/current-project", "/api/memory/import"], "confirm.importCurrentProject", "status.currentProjectMemoryImported"); }
+  try {
+    await importBundle(
+      file,
+      ["/api/memory/import/current-project", "/api/memory/import"],
+      scopedKey("confirm.importCurrentProject"),
+      scopedKey("status.currentProjectMemoryImported"),
+    );
+  }
   finally { importCurrentProjectInput.value = ""; }
 });
 
@@ -1989,6 +2042,7 @@ appScrimEl.addEventListener("click", () => { closeSettingsDrawer(); closeDetailD
 /* ── Init ── */
 
 applyStaticTranslations();
+applyScopedTranslations();
 renderUserSummary();
 renderRecallCaseList();
 renderIndexTraceSelect();

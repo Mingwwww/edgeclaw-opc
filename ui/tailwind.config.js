@@ -70,6 +70,9 @@ export default {
           'sans-serif',
         ],
       },
+      fontSize: {
+        xxs: ["11px", { lineHeight: "14px" }],
+      },
     },
   },
   plugins: [require('@tailwindcss/typography')],

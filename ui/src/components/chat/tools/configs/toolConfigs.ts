@@ -566,18 +566,26 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
     input: {
       type: 'collapsible',
       title: (input: any) => {
-        const count = input.questions?.length || 0;
-        const hasAnswers = input.answers && Object.keys(input.answers).length > 0;
+        const questions = Array.isArray(input.questions) ? input.questions : [];
+        const count = questions.length;
+        const hasAnswers =
+          input.answers &&
+          typeof input.answers === 'object' &&
+          !Array.isArray(input.answers) &&
+          Object.keys(input.answers).length > 0;
         if (count === 1) {
-          const header = input.questions[0]?.header || 'Question';
+          const header = questions[0]?.header || 'Question';
           return hasAnswers ? `${header} — answered` : header;
+        }
+        if (count === 0 && input.questions) {
+          return 'Question payload';
         }
         return hasAnswers ? `${count} questions — answered` : `${count} questions`;
       },
       defaultOpen: true,
       contentType: 'question-answer',
       getContentProps: (input: any) => ({
-        questions: input.questions || [],
+        questions: input.questions,
         answers: input.answers || {}
       }),
     },

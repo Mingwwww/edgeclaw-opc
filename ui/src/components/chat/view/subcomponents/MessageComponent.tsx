@@ -32,6 +32,7 @@ type MessageComponentProps = {
   showThinking?: boolean;
   selectedProject?: Project | null;
   provider: Provider | string;
+  hideHeader?: boolean;
 };
 
 type InteractiveOption = {
@@ -43,7 +44,17 @@ type InteractiveOption = {
 type PermissionGrantState = 'idle' | 'granted' | 'error';
 const COPY_HIDDEN_TOOL_NAMES = new Set(['Bash', 'Edit', 'Write', 'ApplyPatch']);
 
-const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, onShowSettings, onGrantToolPermission, autoExpandTools, showRawParameters, showThinking, selectedProject, provider }: MessageComponentProps) => {
+const stringifyMessageContent = (content: unknown): string => {
+  if (typeof content === 'string') return content;
+  if (content === undefined || content === null) return '';
+  try {
+    return typeof content === 'object' ? JSON.stringify(content, null, 2) : String(content);
+  } catch {
+    return String(content);
+  }
+};
+
+const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, onShowSettings, onGrantToolPermission, autoExpandTools, showRawParameters, showThinking, selectedProject, provider, hideHeader = false }: MessageComponentProps) => {
   const { t } = useTranslation('chat');
   const isGrouped = prevMessage && prevMessage.type === message.type &&
     ((prevMessage.type === 'assistant') ||
@@ -54,13 +65,17 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
   const [isExpanded, setIsExpanded] = useState(false);
   const permissionSuggestion = getClaudePermissionSuggestion(message, provider);
   const [permissionGrantState, setPermissionGrantState] = useState<PermissionGrantState>('idle');
-  const userCopyContent = String(message.content || '');
+  const messageContent = stringifyMessageContent(message.content);
+  const messageImages = Array.isArray(message.images)
+    ? message.images.filter((image) => image && typeof image.data === 'string')
+    : [];
+  const userCopyContent = messageContent;
   const formattedMessageContent = useMemo(
-    () => formatUsageLimitText(String(message.content || '')),
-    [message.content]
+    () => formatUsageLimitText(messageContent),
+    [messageContent]
   );
   const assistantCopyContent = message.isToolUse
-    ? String(message.displayText || message.content || '')
+    ? stringifyMessageContent(message.displayText || message.content)
     : formattedMessageContent;
   const isCommandOrFileEditToolResponse = Boolean(
     message.isToolUse && COPY_HIDDEN_TOOL_NAMES.has(String(message.toolName || ''))
@@ -119,11 +134,11 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
         <div className="flex w-full items-end space-x-0 sm:w-auto sm:max-w-[85%] sm:space-x-3 md:max-w-md lg:max-w-lg xl:max-w-xl">
           <div className="group flex-1 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-white shadow-sm sm:flex-initial sm:px-4">
             <div className="whitespace-pre-wrap break-words text-sm">
-              {message.content}
+              {messageContent}
             </div>
-            {message.images && message.images.length > 0 && (
+            {messageImages.length > 0 && (
               <div className="mt-2 grid grid-cols-2 gap-2">
-                {message.images.map((img, idx) => (
+                {messageImages.map((img, idx) => (
                   <img
                     key={img.name || idx}
                     src={img.data}
@@ -141,7 +156,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
               <span>{formattedTime}</span>
             </div>
           </div>
-          {!isGrouped && (
+          {!hideHeader && !isGrouped && (
             <div className="hidden h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm text-white sm:flex">
               U
             </div>
@@ -159,7 +174,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                 }`}
               />
               <div className="min-w-0 flex-1">
-                <div className="break-words text-foreground">{message.content}</div>
+                <div className="break-words text-foreground">{messageContent}</div>
                 {(message.taskStatus || message.taskId) && (
                   <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
                     {message.taskStatus && (
@@ -178,7 +193,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
       ) : (
         /* Claude/Error/Tool messages on the left */
         <div className="w-full">
-          {!isGrouped && (
+          {!hideHeader && !isGrouped && (
             <div className="mb-2 flex items-center space-x-3">
               {message.type === 'error' ? (
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-red-600 text-sm text-white">
@@ -330,7 +345,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                       {t('interactive.title')}
                     </h4>
                     {(() => {
-                      const lines = (message.content || '').split('\n').filter((line) => line.trim());
+                      const lines = messageContent.split('\n').filter((line) => line.trim());
                       const questionLine = lines.find((line) => line.includes('?')) || lines[0] || '';
                       const options: InteractiveOption[] = [];
 
@@ -409,7 +424,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                   </summary>
                   <div className="mt-2 border-l-2 border-gray-300 pl-4 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-400">
                     <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
-                      {message.content}
+                      {messageContent}
                     </Markdown>
                   </div>
                 </details>
@@ -424,7 +439,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                     </summary>
                     <div className="mt-2 border-l-2 border-gray-300 pl-4 text-sm italic text-gray-600 dark:border-gray-600 dark:text-gray-400">
                       <div className="whitespace-pre-wrap">
-                        {message.reasoning}
+                        {stringifyMessageContent(message.reasoning)}
                       </div>
                     </div>
                   </details>
@@ -493,4 +508,3 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
 });
 
 export default MessageComponent;
-
