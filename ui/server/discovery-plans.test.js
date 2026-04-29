@@ -6,6 +6,8 @@ import path from 'node:path';
 
 import {
   archiveProjectDiscoveryPlan,
+  buildDiscoveryPlanExecutionPrompt,
+  getProjectDiscoveryContext,
   getProjectDiscoveryPlansOverview,
   queueDiscoveryPlanExecution,
   readDiscoveryPlanStore,
@@ -65,6 +67,15 @@ async function writeDiscoveryPlan(projectRoot, plan) {
   await fs.writeFile(
     path.join(projectRoot, plan.planFilePath),
     `# Example plan\n\n## Context\nA\n\n## Signals Reviewed\nB\n\n## Proposed Work\nC\n\n## Execution Steps\nD\n\n## Verification\nE\n\n## Approval And Execution\nF\n`,
+    'utf8',
+  );
+}
+
+async function writeScheduledTasks(projectRoot, tasks) {
+  await fs.mkdir(path.join(projectRoot, '.claude'), { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, '.claude', 'scheduled_tasks.json'),
+    JSON.stringify({ tasks }, null, 2),
     'utf8',
   );
 }
@@ -154,4 +165,44 @@ test('discovery plans can be listed, queued, updated, and archived', async () =>
 
   store = await readDiscoveryPlanStore(projectRoot);
   assert.equal(store.plans[0].status, 'superseded');
+});
+
+test('discovery context includes future reminder cron jobs as signals', async () => {
+  const homeDir = await createTempHome();
+  const projectName = 'project-future-reminder-context';
+  const projectRoot = path.join(homeDir, 'workspace-future-reminder-context');
+
+  await fs.mkdir(projectRoot, { recursive: true });
+  await writeProjectConfig(homeDir, projectName, projectRoot);
+  await writeScheduledTasks(projectRoot, [{
+    id: 'meeting-reminder',
+    cron: '0 10 6 5 *',
+    prompt: '下周三 10 点提醒我汇报 edgeclaw-opc 的 AlwaysOn Proactive 进展',
+    createdAt: Date.now(),
+    recurring: false,
+  }]);
+
+  const context = await getProjectDiscoveryContext(projectName);
+
+  assert.equal(context.cronJobs.length, 1);
+  assert.equal(context.cronJobs[0].id, 'meeting-reminder');
+  assert.match(context.cronJobs[0].prompt, /汇报 edgeclaw-opc/);
+  assert.equal(context.cronJobs[0].recurring, false);
+});
+
+test('auto discovery plan execution is constrained to draft artifacts', () => {
+  const command = buildDiscoveryPlanExecutionPrompt(
+    {
+      id: 'prepare-meeting-brief',
+      approvalMode: 'auto',
+      planFilePath: '.claude/always-on/plans/prepare-meeting-brief.md',
+    },
+    '# Prepare meeting brief\n\n## Context\nA\n\n## Signals Reviewed\nB\n\n## Proposed Work\nC\n\n## Execution Steps\nWrite `.claude/always-on/artifacts/meeting-brief.md`.\n\n## Verification\nD\n\n## Approval And Execution\nE',
+    'project-future-reminder-context',
+  );
+
+  assert.match(command, /Auto-execution safety boundary/);
+  assert.match(command, /\.claude\/always-on\/artifacts\//);
+  assert.match(command, /Do not modify product source code/);
+  assert.match(command, /manual approval is required/);
 });

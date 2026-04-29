@@ -520,7 +520,18 @@ export async function getProjectDiscoveryPlansOverview(projectName) {
   };
 }
 
-function buildDiscoveryPlanExecutionPrompt(plan, planContent, projectName) {
+export function buildDiscoveryPlanExecutionPrompt(plan, planContent, projectName) {
+  const autoSafety =
+    plan.approvalMode === 'auto'
+      ? [
+          'Auto-execution safety boundary:',
+          '- This plan may only do read-only preparation and write draft artifacts under `.claude/always-on/artifacts/`.',
+          '- Do not modify product source code, tests, config, docs outside `.claude/always-on/artifacts/`, git state, schedules, or external services.',
+          '- If the approved plan asks for anything outside that boundary, stop and explain that manual approval is required.',
+          '',
+        ]
+      : [];
+
   return [
     `Always-On execution for project "${projectName}".`,
     '',
@@ -528,6 +539,7 @@ function buildDiscoveryPlanExecutionPrompt(plan, planContent, projectName) {
     'Execute the work directly.',
     'Do not enter Plan Mode.',
     'Do not create a second mini-plan before acting.',
+    ...autoSafety,
     '',
     `Plan ID: ${plan.id}`,
     `Plan file: ${plan.planFilePath}`,
