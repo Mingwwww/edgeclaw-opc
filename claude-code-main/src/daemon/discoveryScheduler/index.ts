@@ -3,15 +3,36 @@ import { logForDebugging } from '../../utils/debug.js'
 import { getDiscoveryTriggerConfig } from './config.js'
 import { evaluateDiscoveryGates } from './gates.js'
 import { notifyDiscoveryFire } from './notifier.js'
+import type { DiscoveryTriggerConfig, GateResult, AlwaysOnHeartbeat } from './types.js'
 
 type ProjectTimer = {
   timer: ReturnType<typeof setInterval>
   running: boolean
 }
 
+type DiscoverySchedulerDependencies = {
+  getDiscoveryTriggerConfig: () => DiscoveryTriggerConfig
+  evaluateDiscoveryGates: (
+    projectRoot: string,
+    config: DiscoveryTriggerConfig,
+  ) => Promise<GateResult>
+  notifyDiscoveryFire: (
+    projectRoot: string,
+    heartbeat: AlwaysOnHeartbeat,
+  ) => Promise<void>
+}
+
+const defaultDependencies: DiscoverySchedulerDependencies = {
+  getDiscoveryTriggerConfig,
+  evaluateDiscoveryGates,
+  notifyDiscoveryFire,
+}
+
 export class DiscoveryScheduler {
   private readonly timers = new Map<string, ProjectTimer>()
   private stopped = false
+
+  constructor(private readonly deps = defaultDependencies) {}
 
   ensureProject(projectRoot: string): void {
     if (this.stopped) return
@@ -43,13 +64,13 @@ export class DiscoveryScheduler {
     entry.running = true
     try {
       if (this.stopped) return
-      const config = getDiscoveryTriggerConfig()
-      const result = await evaluateDiscoveryGates(projectRoot, config)
+      const config = this.deps.getDiscoveryTriggerConfig()
+      const result = await this.deps.evaluateDiscoveryGates(projectRoot, config)
       if (!result.ok) {
         return
       }
       if (this.stopped) return
-      await notifyDiscoveryFire(projectRoot, result.heartbeat)
+      await this.deps.notifyDiscoveryFire(projectRoot, result.heartbeat)
     } catch (error) {
       logForDebugging(
         `[AlwaysOnDiscovery] tick failed for ${projectRoot}: ${String(error)}`,

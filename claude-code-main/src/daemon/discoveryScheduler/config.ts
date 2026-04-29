@@ -17,8 +17,8 @@ function positiveNumber(value: unknown, fallback: number): number {
     : fallback
 }
 
-export function getDiscoveryTriggerConfig(): DiscoveryTriggerConfig {
-  const raw = (loadEdgeClawConfig() as any).agents?.alwaysOn?.discovery?.trigger
+export function resolveDiscoveryTriggerConfig(rawConfig: unknown): DiscoveryTriggerConfig {
+  const raw = (rawConfig as any).agents?.alwaysOn?.discovery?.trigger
   const preferClient = raw?.preferClient === 'tui' ? 'tui' : 'webui'
 
   return {
@@ -45,4 +45,8 @@ export function getDiscoveryTriggerConfig(): DiscoveryTriggerConfig {
     ),
     preferClient,
   }
+}
+
+export function getDiscoveryTriggerConfig(): DiscoveryTriggerConfig {
+  return resolveDiscoveryTriggerConfig(loadEdgeClawConfig())
 }
