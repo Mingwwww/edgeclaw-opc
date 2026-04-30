@@ -277,8 +277,11 @@ export type ServerManagerEvents = {
    * Phase-label updates emitted while start() is in flight. Consumed by
    * the splash window so users get visible feedback during the long
    * first-launch tarball extraction. Strings are user-facing Chinese
-   * copy — keep them short (≤ 24 chars) and end-state-shaped (e.g.
-   * "解压 claudecodeui (560MB)..." not "Extracting...").
+   * copy — keep them short (≤ 24 chars), end-state-shaped, and
+   * deliberately *abstracted* away from internal bundle names: users
+   * shouldn't see "claudecodeui" or "claude-code-main", they should see
+   * "正在解压应用资源 (1/3)" etc. The internal labels are mapped at the
+   * resolvePaths() call site.
    */
   progress: [phase: string];
 };
@@ -330,6 +333,7 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     runtimeBaseDir: string,
     tarballName: string,
     destDirName: string,
+    progressLabel: string,
   ): Promise<string> {
     const destDir = path.join(runtimeBaseDir, destDirName);
     const tarball = path.join(tarballSourceDir, tarballName);
@@ -351,21 +355,19 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
       }
     }
 
-    // Fresh extract: nuke any partial leftover so we don't merge stale + new
-    // payloads (could happen if a previous extraction was interrupted).
+    // Single user-visible phase covers both the partial-leftover nuke and
+    // the actual tar extraction — users don't care which sub-step we're
+    // on, and "正在解压…" stays accurate throughout (cleanup is fast,
+    // tar dominates wall-clock).
+    this.emit("progress", `${progressLabel}…首次安装可能需要 30 秒`);
+
     if (fsSync.existsSync(destDir)) {
-      this.emit("progress", `清理旧 ${destDirName}…`);
+      // Fresh extract: nuke any partial leftover so we don't merge stale
+      // + new payloads (could happen if a previous extraction was
+      // interrupted).
       await fs.rm(destDir, { recursive: true, force: true });
     }
     await fs.mkdir(destDir, { recursive: true });
-
-    // Show size in the progress label so users can roughly estimate how
-    // long this phase will take (rule of thumb: ~1MB/100ms on warm SSD).
-    const sizeMB = Math.round(tarStat.size / 1024 / 1024);
-    this.emit(
-      "progress",
-      `解压 ${destDirName} (~${sizeMB}MB)…首次安装可能需要 30 秒`,
-    );
 
     await execFile("/usr/bin/tar", ["xf", tarball, "-C", destDir], {
       timeout: 180_000,
@@ -451,7 +453,9 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     }
     const runtimeBaseDir = getRuntimeBaseDir(this.appVersion);
     fsSync.mkdirSync(runtimeBaseDir, { recursive: true });
-    this.emit("progress", "清理旧版本 runtime 缓存…");
+    // Stale-version GC runs silently — it only does work on upgrades and
+    // there's nothing useful to tell the user about it. Bundling its
+    // wall-clock into the next phase keeps the splash sequence shorter.
     this.cleanupStaleRuntimeVersions(this.appVersion);
 
     // Order matters only for clarity; resolution at runtime is via ../../../
@@ -462,23 +466,31 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     // execution means the splash status label tracks reality (one tarball
     // at a time) instead of showing one phase while three race in the
     // background.
+    //
+    // Progress labels are intentionally generic ("应用资源 (N/3)") rather
+    // than naming the internal bundle (memory-core / claudecodeui /
+    // claude-code-main) — those names mean nothing to end users and the
+    // (N/3) index gives enough sense of "how many steps left".
     await this.ensureBundleExtracted(
       resources,
       runtimeBaseDir,
       "edgeclaw-memory-core-bundle.tar",
       "edgeclaw-memory-core",
+      "正在解压应用资源 (1/3)",
     );
     const claudeCodeUiDir = await this.ensureBundleExtracted(
       resources,
       runtimeBaseDir,
       "claudecodeui-bundle.tar",
       "claudecodeui",
+      "正在解压应用资源 (2/3)",
     );
     const claudeCodeMainDir = await this.ensureBundleExtracted(
       resources,
       runtimeBaseDir,
       "claude-code-main-bundle.tar",
       "claude-code-main",
+      "正在解压应用资源 (3/3)",
     );
     return {
       // Native binaries stay under the read-only Resources/ — no need to copy
@@ -727,7 +739,7 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     // here, the parent server waits on the new port but the spawned proxy.ts
     // still binds runtime.proxyPort from yaml → mismatch. Leave proxy port
     // to YAML so parent + child agree.
-    this.emit("progress", "准备 runtime 资源…");
+    this.emit("progress", "配置运行环境…");
     const { nodeBin, bunBin, serverEntry, serverCwd, claudeCodeMainDir } =
       await this.resolvePaths();
 
@@ -797,7 +809,7 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
 
     await this.writePidFile(child.pid);
 
-    this.emit("progress", "等待本地服务就绪…");
+    this.emit("progress", "启动本地服务…");
     try {
       await waitForServerHealth(chosenPort, child);
     } catch (err) {
