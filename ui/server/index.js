@@ -2624,19 +2624,29 @@ async function startServer() {
                     }
                 }
 
-                // Start global Chrome for browser-use CDP sharing
-                if (!process.env.CDP_URL) {
-                    try {
-                        const { ensureGlobalChrome, startChromeHealthCheck } = await import('./utils/globalChrome.js');
-                        const cdpUrl = await ensureGlobalChrome();
-                        if (cdpUrl) {
-                            process.env.CDP_URL = cdpUrl;
-                            startChromeHealthCheck(30_000);
-                            console.log(`${c.ok('[BROWSER]')} Global Chrome ready at ${c.bright(cdpUrl)}`);
-                        }
-                    } catch (err) {
-                        console.warn(`${c.warn('[BROWSER]')} Global Chrome not started: ${err.message}`);
-                    }
+                // NOTE: Global Chrome (browser-use CDP) is intentionally NOT
+                // launched at server boot anymore.
+                //
+                // Old behaviour (eager): ensureGlobalChrome() + 30s health
+                // check every startup → forced every user to pay ~5s of
+                // Chrome cold-start AND triggered macOS TCC's "EdgeClaw
+                // 想要控制 Google Chrome" prompt on first run, even if
+                // they never use the browser-use skill.
+                //
+                // New behaviour (lazy): the bun-hosted browser-use module
+                // (`claude-code-main/src/services/mcp/builtin/browserUse/
+                // session.ts`) calls its own ensureGlobalChrome() the first
+                // time `getOrCreateSession()` is invoked, which is the only
+                // path that actually needs CDP. That copy also does
+                // restart-on-failure inside getOrCreateSession, so we don't
+                // need a parent-side periodic health check either.
+                //
+                // If a user has CDP_URL pre-set in their env (advanced /
+                // shared-Chrome case), respect it: claude-sdk.js will
+                // forward it to the bun child. Otherwise the env var stays
+                // unset until lazy launch happens inside bun.
+                if (process.env.CDP_URL) {
+                    console.log(`${c.info('[BROWSER]')} Using pre-configured Chrome CDP at ${c.bright(process.env.CDP_URL)}`);
                 }
 
                 console.log(`${c.info('[INFO]')} To run in development mode with hot-module replacement, go to http://${DISPLAY_HOST}:${VITE_PORT}`);
