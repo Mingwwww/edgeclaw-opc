@@ -10,7 +10,15 @@
  *   4. Wait for /health, then load http://127.0.0.1:<port>/ in BrowserWindow
  */
 
-import { BrowserWindow, Menu, app, dialog, ipcMain, shell } from "electron";
+import {
+  BrowserWindow,
+  Menu,
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  shell,
+} from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -34,6 +42,20 @@ const serverManager = new ServerManager({
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let shutdownStarted = false;
+
+// Current local server port, mirrored from ServerManager events. The Help
+// menu's "在浏览器中打开" / "复制本机地址" items read this to build the URL
+// and decide their enabled state. Set on `ready`, cleared on `restarting`;
+// setupAppMenu() is called whenever this changes so macOS's menu bar
+// reflects the live state without us having to mutate menu items in place
+// (Electron's MenuItem.enabled mutation is unreliable on built-from-template
+// menus across versions — rebuild is simpler and idempotent).
+let currentServerPort: number | null = null;
+
+const EDGECLAW_DIR = path.dirname(configPath);
+const SERVER_LOG_PATH = path.join(EDGECLAW_DIR, "desktop.server.log");
+const REPO_URL = "https://github.com/Mingwwww/edgeclaw-opc";
+const ISSUES_URL = `${REPO_URL}/issues`;
 
 /**
  * Read build-info.json (emitted by scripts/release.sh) and feed it into
@@ -91,6 +113,15 @@ function setupAboutPanel(): void {
 
 function setupAppMenu(): void {
   if (process.platform !== "darwin") return;
+
+  // Build the localhost URL once. The historical `?uiV2=1` query was
+  // retired in 2899ba5 (V2 is the only entry; `useIsUiV2`/`VITE_UI_V2`
+  // were removed from the ui), so we serve a clean root URL — opening
+  // it in a real browser produces exactly the same UI the BrowserWindow
+  // shows.
+  const localUrl =
+    currentServerPort != null ? `http://127.0.0.1:${currentServerPort}/` : null;
+
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
@@ -132,6 +163,65 @@ function setupAppMenu(): void {
       {
         label: "窗口",
         submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "close" }],
+      },
+      {
+        // role: "help" tells macOS this is the Help menu so it adds the
+        // built-in Help search field above our items, matching native app
+        // conventions. Our app-defined items below are unaffected by it.
+        label: "帮助",
+        role: "help",
+        submenu: [
+          {
+            label: "在浏览器中打开",
+            // Disabled until the local server has emitted `ready` with a
+            // concrete port; the `ready`/`restarting` listeners rebuild the
+            // menu so this flips back on automatically.
+            enabled: localUrl != null,
+            click: () => {
+              if (localUrl) void shell.openExternal(localUrl);
+            },
+          },
+          {
+            label: "复制本机地址",
+            enabled: localUrl != null,
+            click: () => {
+              if (localUrl) clipboard.writeText(localUrl);
+            },
+          },
+          { type: "separator" },
+          {
+            label: "显示服务日志",
+            click: () => {
+              // Reveal the log file in Finder when it exists; before the
+              // first spawn the file may not be there yet — fall back to
+              // opening the parent dir so the menu item is never a no-op.
+              if (fs.existsSync(SERVER_LOG_PATH)) {
+                shell.showItemInFolder(SERVER_LOG_PATH);
+              } else {
+                void shell.openPath(EDGECLAW_DIR);
+              }
+            },
+          },
+          {
+            label: "显示配置文件夹",
+            click: () => {
+              void shell.openPath(EDGECLAW_DIR);
+            },
+          },
+          { type: "separator" },
+          {
+            label: "报告问题…",
+            click: () => {
+              void shell.openExternal(ISSUES_URL);
+            },
+          },
+          {
+            label: "项目主页…",
+            click: () => {
+              void shell.openExternal(REPO_URL);
+            },
+          },
+        ],
       },
     ]),
   );
@@ -282,7 +372,7 @@ function createMainWindow(
     },
   });
 
-  void win.loadURL(`http://127.0.0.1:${port}/?uiV2=1`);
+  void win.loadURL(`http://127.0.0.1:${port}/`);
 
   win.on("close", (e) => {
     if (!isQuitting) {
@@ -354,9 +444,23 @@ if (!gotLock) {
     });
 
     serverManager.on("ready", (p) => {
+      currentServerPort = p;
+      // Rebuild so the Help menu's URL-dependent items flip from
+      // disabled → enabled (or update if the port changed across a
+      // restart).
+      setupAppMenu();
       if (mainWindow && !mainWindow.isDestroyed()) {
-        void mainWindow.loadURL(`http://127.0.0.1:${p}/?uiV2=1`);
+        void mainWindow.loadURL(`http://127.0.0.1:${p}/`);
       }
+    });
+
+    serverManager.on("restarting", () => {
+      // Disable URL-dependent Help items while the child is being respawned;
+      // the next `ready` event will re-enable them with the (possibly new)
+      // port. Avoids a brief window where "复制本机地址" silently copies a
+      // stale URL pointing at a port the new child hasn't bound yet.
+      currentServerPort = null;
+      setupAppMenu();
     });
 
     serverManager.on("max-restarts", () => {
