@@ -23,6 +23,7 @@ import SettingsCard from '../SettingsCard';
 import SettingsRow from '../SettingsRow';
 import SettingsSection from '../SettingsSection';
 import SettingsToggle from '../SettingsToggle';
+import ProviderTestDialog from '../ProviderTestDialog';
 import { cn } from '../../../../lib/utils';
 import type { SettingsProject } from '../../types/types';
 
@@ -338,7 +339,19 @@ function RuntimeSection({ config, onChange }: { config: EdgeClawConfig; onChange
   );
 }
 
-function ProvidersEditor({ config, onChange }: { config: EdgeClawConfig; onChange: (next: EdgeClawConfig) => void }) {
+type TestTargetProvider = { providerId: string; provider: Provider };
+type TestTargetEntry    = { providerId: string; provider: Provider; modelEntryId: string };
+type TestTarget = TestTargetProvider | TestTargetEntry;
+
+function ProvidersEditor({
+  config,
+  onChange,
+  onTest,
+}: {
+  config: EdgeClawConfig;
+  onChange: (next: EdgeClawConfig) => void;
+  onTest: (target: TestTargetProvider) => void;
+}) {
   const providers = config.models?.providers ?? {};
   const ids = Object.keys(providers);
 
@@ -377,6 +390,10 @@ function ProvidersEditor({ config, onChange }: { config: EdgeClawConfig; onChang
       {ids.map((id) => {
         const p = providers[id] ?? {};
         const isMaskedKey = p.apiKey === MASK;
+        // Enable test as soon as the user has typed enough to make a real
+        // call. apiKey="********" still counts (backend will pull the real
+        // value off disk through preserveMaskedSecrets).
+        const canTest = !!p.baseUrl?.trim() && (!!p.apiKey?.trim());
         return (
           <div key={id} className="space-y-2 rounded-lg border border-border bg-background/50 p-3">
             <div className="flex items-center gap-2">
@@ -386,6 +403,15 @@ function ProvidersEditor({ config, onChange }: { config: EdgeClawConfig; onChang
                 onChange={(e) => renameProvider(id, e.target.value.trim())}
                 className="flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
               />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onTest({ providerId: id, provider: p })}
+                disabled={!canTest}
+                title={canTest ? '测试该 provider 的连通性与 Key 有效性' : '需要填写 baseUrl 和 apiKey'}
+              >
+                测试连接
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => removeProvider(id)} className="text-destructive hover:text-destructive">Remove</Button>
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -430,9 +456,18 @@ function ProvidersEditor({ config, onChange }: { config: EdgeClawConfig; onChang
   );
 }
 
-function EntriesEditor({ config, onChange }: { config: EdgeClawConfig; onChange: (next: EdgeClawConfig) => void }) {
+function EntriesEditor({
+  config,
+  onChange,
+  onTest,
+}: {
+  config: EdgeClawConfig;
+  onChange: (next: EdgeClawConfig) => void;
+  onTest: (target: TestTargetEntry) => void;
+}) {
   const entries = config.models?.entries ?? {};
-  const providerIds = Object.keys(config.models?.providers ?? {});
+  const providers = config.models?.providers ?? {};
+  const providerIds = Object.keys(providers);
   const ids = Object.keys(entries);
 
   const setEntry = (id: string, e: ModelEntry) => onChange(patch(config, ['models', 'entries', id], e));
@@ -476,6 +511,9 @@ function EntriesEditor({ config, onChange }: { config: EdgeClawConfig; onChange:
       )}
       {ids.map((id) => {
         const entry = entries[id] ?? {};
+        const linkedProvider = entry.provider ? providers[entry.provider] : undefined;
+        const canTest = !!entry.provider && !!entry.name?.trim()
+          && !!linkedProvider?.baseUrl?.trim() && !!linkedProvider?.apiKey?.trim();
         return (
           <div key={id} className="space-y-2 rounded-lg border border-border bg-background/50 p-3">
             <div className="flex items-center gap-2">
@@ -485,6 +523,19 @@ function EntriesEditor({ config, onChange }: { config: EdgeClawConfig; onChange:
                 onChange={(e) => renameEntry(id, e.target.value.trim())}
                 className="flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
               />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onTest({
+                  providerId: entry.provider!,
+                  provider: linkedProvider!,
+                  modelEntryId: id,
+                })}
+                disabled={!canTest}
+                title={canTest ? '测试 provider + 模型组合（含 tool use 检测）' : '需要 provider、model name 都填好'}
+              >
+                测试模型
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => removeEntry(id)} className="text-destructive hover:text-destructive">Remove</Button>
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -515,12 +566,20 @@ function EntriesEditor({ config, onChange }: { config: EdgeClawConfig; onChange:
   );
 }
 
-function ModelsSection({ config, onChange }: { config: EdgeClawConfig; onChange: (next: EdgeClawConfig) => void }) {
+function ModelsSection({
+  config,
+  onChange,
+  onTest,
+}: {
+  config: EdgeClawConfig;
+  onChange: (next: EdgeClawConfig) => void;
+  onTest: (target: TestTarget) => void;
+}) {
   return (
     <SettingsSection title="Models" description="Define upstream providers and the named model entries that agents bind to.">
       <div className="space-y-4">
-        <ProvidersEditor config={config} onChange={onChange} />
-        <EntriesEditor  config={config} onChange={onChange} />
+        <ProvidersEditor config={config} onChange={onChange} onTest={onTest} />
+        <EntriesEditor  config={config} onChange={onChange} onTest={onTest} />
       </div>
     </SettingsSection>
   );
@@ -823,6 +882,12 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
   // since the surrounding modal already owns its own URL.
   const [activeSection, setActiveSection] = useState<SectionId>('runtime');
 
+  // Provider/entry test dialog. Lives at the tab level so that the dialog
+  // can call back into save() without prop-drilling through Models/Editor.
+  // null = closed. The target carries the provider draft (apiKey may be the
+  // ******** mask — backend reconstitutes it from disk via providerId).
+  const [testTarget, setTestTarget] = useState<TestTarget | null>(null);
+
   // Parse `raw` into a typed config for the form. Memoised so we don't
   // reparse on every keystroke unrelated to YAML, but raw IS the source of
   // truth — every form patch reserialises back into raw, which keeps the
@@ -959,7 +1024,7 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
             {parsedConfig ? (
               <>
                 {activeSection === 'runtime' && <RuntimeSection config={parsedConfig} onChange={onFormChange} />}
-                {activeSection === 'models'  && <ModelsSection  config={parsedConfig} onChange={onFormChange} />}
+                {activeSection === 'models'  && <ModelsSection  config={parsedConfig} onChange={onFormChange} onTest={setTestTarget} />}
                 {activeSection === 'agents'  && <AgentsSection  config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'alwaysOn' && <AlwaysOnSection config={parsedConfig} projects={projects} onChange={onFormChange} />}
                 {activeSection === 'memory'  && <MemorySection  config={parsedConfig} onChange={onFormChange} />}
@@ -1042,6 +1107,20 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
           {saving ? 'Saving...' : 'Save & reload'}
         </Button>
       </div>
+
+      {/* Provider test dialog. Mounted at the tab root so closing the dialog
+          (or saving from inside it) goes through the same store as the
+          sticky save bar above — no duplicate save paths. */}
+      {testTarget && (
+        <ProviderTestDialog
+          providerId={testTarget.providerId}
+          provider={testTarget.provider}
+          modelEntryId={'modelEntryId' in testTarget ? testTarget.modelEntryId : undefined}
+          isDirty={isDirty}
+          onSave={save}
+          onClose={() => setTestTarget(null)}
+        />
+      )}
     </div>
   );
 }

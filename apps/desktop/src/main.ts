@@ -35,6 +35,60 @@ let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let shutdownStarted = false;
 
+/**
+ * Read build-info.json (emitted by scripts/release.sh) and feed it into
+ * macOS's native "About" panel. Result: `EdgeClaw → 关于 EdgeClaw` shows
+ *
+ *   EdgeClaw
+ *   Version 0.1.1
+ *   build a2f682b · 2026-04-30
+ *   Copyright …
+ *
+ * In dev (`npm run dev`) build-info.json doesn't exist yet — we fall back to
+ * package.json version + a "(dev build)" marker so the About panel still
+ * works and is obviously distinguishable from a packaged release.
+ *
+ * macOS-only: `setAboutPanelOptions` is a no-op on Linux/Windows, so the
+ * platform guard isn't strictly required, but we keep the early-return for
+ * symmetry with setupAppMenu.
+ */
+function setupAboutPanel(): void {
+  if (process.platform !== "darwin") return;
+
+  type BuildInfo = {
+    version?: string;
+    gitSha?: string;
+    gitFullSha?: string;
+    gitBranch?: string;
+    buildDate?: string;
+    mode?: string;
+  };
+
+  const buildInfoPath = path.join(__dirname, "build-info.json");
+  let info: BuildInfo = {};
+  try {
+    info = JSON.parse(fs.readFileSync(buildInfoPath, "utf8")) as BuildInfo;
+  } catch {
+    // Dev mode or bundle missing build-info.json — leave info empty, fall back below.
+  }
+
+  const version = info.version ?? app.getVersion();
+  const sha = info.gitSha && info.gitSha !== "unknown" ? info.gitSha : null;
+  const date = info.buildDate ?? null;
+
+  // macOS shows `version` in parentheses under the main version line. The
+  // canonical "Version 0.1.1 (build a2f682b · 2026-04-30)" format puts the
+  // human-friendly version in `applicationVersion` and provenance in `version`.
+  const versionLine = sha && date ? `build ${sha} · ${date}` : "dev build";
+
+  app.setAboutPanelOptions({
+    applicationName: "EdgeClaw",
+    applicationVersion: version,
+    version: versionLine,
+    copyright: "Copyright © 2026 EdgeClaw Contributors. AGPL-3.0-or-later.",
+  });
+}
+
 function setupAppMenu(): void {
   if (process.platform !== "darwin") return;
   Menu.setApplicationMenu(
@@ -278,6 +332,7 @@ if (!gotLock) {
   });
 
   void app.whenReady().then(async () => {
+    setupAboutPanel();
     setupAppMenu();
     registerIpcHandlers();
 

@@ -2,11 +2,8 @@
 # ============================================================================
 # EdgeClaw Desktop macOS One-Click Packager (release.sh)
 # ----------------------------------------------------------------------------
-# Adapted from OpenClaw's release.sh. Differences:
-#   - Builds claudecodeui (vite build) instead of OpenClaw gateway
-#   - Two tarballs (claudecodeui-bundle.tar + claude-code-main-bundle.tar)
-#   - Bundles both Node 22 (for claudecodeui server) and Bun (for claude-code-main)
-#   - Bundle ID: cc.edgeclaw.desktop
+# 完整发版流程见 apps/desktop/RELEASING.md（如何 bump 版本号 / 何时打 tag /
+# 何时合 main / 如何写 CHANGELOG）。本脚本只负责"把当前 commit 打成 DMG"。
 #
 # Usage:
 #   bash scripts/release.sh                 # auto: signed if cert in keychain, else ad-hoc
@@ -15,6 +12,11 @@
 #   bash scripts/release.sh --skip-notarize # signed but no notarization
 #   bash scripts/release.sh --skip-build    # reuse existing claudecodeui/dist
 #   bash scripts/release.sh --skip-verify   # skip post-build verification
+#
+# Environment overrides (escape hatches — see RELEASING.md for context):
+#   ALLOW_UNTAGGED=1         # skip "git tag must match version" pre-flight check
+#                            # (only useful with --ad-hoc; signed builds should be tagged)
+#   ALLOW_NON_MAIN_SIGNED=1  # allow --signed from a non-main branch (hotfix scenarios)
 # ============================================================================
 
 set -euo pipefail
@@ -97,6 +99,57 @@ if [[ "$MODE" != "adhoc" ]]; then
 fi
 [[ "$MODE" == "adhoc" ]] && ok "Mode: ad-hoc (local-test, no notarization)"
 
+# ─────────────── Git provenance (tag + branch + sha) ───────────────
+# Why this lives in pre-flight: a built DMG without a corresponding git tag is
+# untraceable — when a user reports a bug, you can't reliably check out the
+# code that built their binary. We refuse to ship that by default. See
+# RELEASING.md for the full rationale and escape hatches.
+GIT_SHA="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+GIT_FULL_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+GIT_BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+BUILD_DATE="$(date -u +%Y-%m-%d)"
+EXPECTED_TAG="v${VERSION}"
+
+if [[ "$GIT_SHA" == "unknown" ]]; then
+  warn "Not a git checkout — skipping tag/branch checks (build-info will say 'unknown')"
+else
+  # Tag check
+  if git -C "$REPO_ROOT" rev-parse "$EXPECTED_TAG" >/dev/null 2>&1; then
+    TAG_SHA="$(git -C "$REPO_ROOT" rev-parse "${EXPECTED_TAG}^{commit}" 2>/dev/null || echo "")"
+    if [[ "$TAG_SHA" != "$GIT_FULL_SHA" ]]; then
+      if [[ "${ALLOW_UNTAGGED:-0}" != "1" ]]; then
+        fail "git tag '${EXPECTED_TAG}' points to ${TAG_SHA:0:7}, but HEAD is ${GIT_SHA}.
+    Either checkout the tagged commit, or re-tag: git tag -f ${EXPECTED_TAG}
+    Or set ALLOW_UNTAGGED=1 (only sane for --ad-hoc)."
+      fi
+      warn "tag '${EXPECTED_TAG}' points to ${TAG_SHA:0:7} ≠ HEAD ${GIT_SHA} (ALLOW_UNTAGGED=1)"
+    else
+      ok "git tag: ${EXPECTED_TAG} → HEAD (${GIT_SHA})"
+    fi
+  else
+    if [[ "${ALLOW_UNTAGGED:-0}" != "1" ]]; then
+      fail "No git tag '${EXPECTED_TAG}' for version ${VERSION}.
+    先跑: (cd apps/desktop && npm version patch -m 'release(desktop): v%s')
+    本地测试可加: ALLOW_UNTAGGED=1 bash scripts/release.sh --ad-hoc
+    完整流程见: apps/desktop/RELEASING.md"
+    fi
+    warn "No git tag '${EXPECTED_TAG}' (ALLOW_UNTAGGED=1)"
+  fi
+
+  # Branch check (signed-only)
+  if [[ "$MODE" == "signed" && "$GIT_BRANCH" != "main" && "$GIT_BRANCH" != "master" ]]; then
+    if [[ "${ALLOW_NON_MAIN_SIGNED:-0}" != "1" ]]; then
+      fail "release(--signed) requires main/master branch (current: ${GIT_BRANCH}).
+    内部测试请用: bash scripts/release.sh --ad-hoc
+    正式发版请: git checkout main && git merge --ff-only ${GIT_BRANCH}
+    Hotfix 强制覆盖: ALLOW_NON_MAIN_SIGNED=1 bash scripts/release.sh --signed"
+    fi
+    warn "signed build from non-main branch '${GIT_BRANCH}' (ALLOW_NON_MAIN_SIGNED=1)"
+  else
+    ok "Branch: ${GIT_BRANCH}   ·   Build date: ${BUILD_DATE}"
+  fi
+fi
+
 if [[ "$MODE" == "signed" && "$SKIP_NOTARIZE" == "0" ]]; then
   if xcrun notarytool history --keychain-profile "$KEYCHAIN_PROFILE" >/dev/null 2>&1; then
     ok "Notarize profile: ${KEYCHAIN_PROFILE}"
@@ -133,6 +186,25 @@ if [[ ! -x "$BUN_BIN" ]]; then
   bash "${SCRIPT_DIR}/download-bun.sh" || fail "download-bun.sh failed"
 fi
 ok "Bundled Bun: $("$BUN_BIN" --version)"
+
+# ============================================================================
+step "Emit build-info.json"
+# ============================================================================
+# Goes into apps/desktop/dist/ alongside main.js — electron-builder's
+# `files: dist/**/*` rule picks it up automatically. Read at startup by
+# main.ts and exposed to renderer via window.edgeclaw.getBuildInfo().
+mkdir -p "${DESKTOP_DIR}/dist"
+cat > "${DESKTOP_DIR}/dist/build-info.json" <<EOF
+{
+  "version": "${VERSION}",
+  "gitSha": "${GIT_SHA}",
+  "gitFullSha": "${GIT_FULL_SHA}",
+  "gitBranch": "${GIT_BRANCH}",
+  "buildDate": "${BUILD_DATE}",
+  "mode": "${MODE}"
+}
+EOF
+ok "build-info.json: v${VERSION} (${GIT_SHA}) @ ${BUILD_DATE} [${MODE}]"
 
 # ============================================================================
 step "Build claudecodeui (vite)"
@@ -520,6 +592,7 @@ echo "  ${BLD}DMG${RST}      ${DMG_OUT}"
 [[ -f "$HELPER_DST" ]]    && echo "  ${BLD}Helper${RST}   ${HELPER_DST}"
 [[ -f "$INSTALL_MD_DST" ]] && echo "  ${BLD}Guide${RST}    ${INSTALL_MD_DST}"
 echo "  ${BLD}Version${RST}  ${VERSION}"
+echo "  ${BLD}Build${RST}    ${GIT_SHA} · ${BUILD_DATE} · branch=${GIT_BRANCH}"
 echo "  ${BLD}Size${RST}     ${DMG_MB}MB"
 echo "  ${BLD}Mode${RST}     ${MODE}"
 if [[ "$MODE" == "signed" ]]; then

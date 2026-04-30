@@ -15,6 +15,7 @@ import {
 } from '../services/edgeclawConfig.js';
 import { reloadEdgeClawConfig } from '../services/edgeclawConfigReloader.js';
 import { suppressNextWatchEvent } from '../services/edgeclawConfigWatcher.js';
+import { testProvider } from '../services/providerTester.js';
 
 const router = express.Router();
 
@@ -98,6 +99,75 @@ router.post('/reload', async (_req, res) => {
     const response = serializeConfigResponse(record, reloadResult);
     broadcastConfigEvent({ source: 'ui-reload', ...response, timestamp: new Date().toISOString() });
     res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+/**
+ * POST /api/config/test-provider
+ *
+ * Probes an LLM provider for connectivity, API compatibility, key validity,
+ * and (optionally) tool-use support. Accepts two input shapes that are
+ * intentionally combinable:
+ *
+ *   { providerId: "deepseek" }
+ *     → test the version on disk verbatim.
+ *
+ *   { provider: { type, baseUrl, apiKey, headers? } }
+ *     → test a draft the user is editing (apiKey is plaintext from form state).
+ *
+ *   { providerId, provider }
+ *     → test the draft, but any field whose value is the mask "********" is
+ *       restored from the on-disk version. This is what lets the user edit
+ *       just the baseUrl without re-entering their key.
+ *
+ * `modelEntryId` is optional; when provided, its `name` is used both as the
+ * `model` field of the probe call and as the trigger for the toolUse check.
+ */
+router.post('/test-provider', async (req, res) => {
+  try {
+    const { providerId, provider: incoming, modelEntryId } = req.body ?? {};
+    const record = readEdgeClawConfigFile();
+    const saved = providerId
+      ? record.config?.models?.providers?.[providerId]
+      : null;
+
+    // Merge precedence: incoming wins, but ******** placeholders fall back
+    // to whatever's on disk (preserveMaskedSecrets does exactly this and is
+    // the same function the PUT handler uses, so behaviour matches saving).
+    const provider = incoming
+      ? preserveMaskedSecrets(incoming, saved ?? {})
+      : saved;
+
+    if (!provider || typeof provider !== 'object') {
+      return res.status(400).json({
+        error: providerId
+          ? `provider not found: ${providerId}`
+          : 'either providerId or provider body is required',
+      });
+    }
+
+    const entries = record.config?.models?.entries ?? {};
+    let modelName = modelEntryId ? entries[modelEntryId]?.name : undefined;
+    // Provider-level tests don't pass a modelEntryId, but the upstream
+    // expects a real model name in the body. Borrow the first entry that
+    // points at this provider — that's a model the user has already
+    // committed to using, so it's guaranteed to be one this gateway accepts.
+    // Without this, "test connection" on a MiniMax/DeepSeek/CCR-style
+    // gateway returns 400 "unknown model gpt-4o-mini" even when the key is
+    // perfectly valid, which is a false negative.
+    if (!modelName && providerId) {
+      for (const entry of Object.values(entries)) {
+        if (entry?.provider === providerId && typeof entry?.name === 'string' && entry.name.trim()) {
+          modelName = entry.name;
+          break;
+        }
+      }
+    }
+
+    const result = await testProvider({ provider, modelName });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
