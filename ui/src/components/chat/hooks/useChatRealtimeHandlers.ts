@@ -220,6 +220,22 @@ export function useChatRealtimeHandlers({
       return;
     }
 
+    // --- Turn boundary: finalize in-flight streaming before non-stream msgs ---
+    // In multi-turn SDK queries, text from different turns is streamed into the
+    // same accumulatedStreamRef. Without flushing here, a single finalized text
+    // message would merge text from all turns, causing duplicates when the
+    // server catch-up (refreshFromServer) returns individual turn messages.
+    if (accumulatedStreamRef.current && sid) {
+      if (streamTimerRef.current) {
+        clearTimeout(streamTimerRef.current);
+        streamTimerRef.current = null;
+      }
+      sessionStore.updateStreaming(sid, accumulatedStreamRef.current, provider);
+      sessionStore.finalizeStreaming(sid);
+      accumulatedStreamRef.current = '';
+      streamBufferRef.current = '';
+    }
+
     // --- All other messages: route to store ---
     // Skip assistant text messages that duplicate finalized streaming content.
     // The streaming pipeline (stream_delta → stream_end → finalizeStreaming)

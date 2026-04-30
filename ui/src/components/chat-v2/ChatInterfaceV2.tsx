@@ -213,6 +213,16 @@ function ChatInterfaceV2({
 
   const handleWebSocketReconnect = useCallback(async () => {
     if (!selectedProject || !selectedSession) return;
+
+    // Reset streaming refs so stale accumulated text from the previous
+    // connection doesn't merge with freshly-fetched server messages.
+    if (streamTimerRef.current) {
+      clearTimeout(streamTimerRef.current);
+      streamTimerRef.current = null;
+    }
+    accumulatedStreamRef.current = '';
+    streamBufferRef.current = '';
+
     const providerVal =
       (localStorage.getItem('selected-provider') as SessionProvider) || 'claude';
     await sessionStore.refreshFromServer(selectedSession.id, {
@@ -221,15 +231,17 @@ function ChatInterfaceV2({
       projectPath: selectedProject.fullPath || selectedProject.path || '',
       ...sessionRequestParams,
     });
-    setIsLoading(false);
-    setCanAbortSession(false);
+    // Don't blindly clear loading state here — the backend may still be
+    // processing. The next `session-status` or `check-session-status`
+    // response will set the correct loading/abort state.
   }, [
     selectedProject,
     selectedSession,
     sessionRequestParams,
     sessionStore,
-    setIsLoading,
-    setCanAbortSession,
+    streamTimerRef,
+    accumulatedStreamRef,
+    streamBufferRef,
   ]);
 
   useChatRealtimeHandlers({

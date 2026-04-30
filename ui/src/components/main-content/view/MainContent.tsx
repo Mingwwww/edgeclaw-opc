@@ -136,6 +136,8 @@ function MainContent({
   onStartNewSession,
   onSelectSession,
   onShowSettings,
+  onDeselectProject,
+  onSelectProjectByName,
   externalMessageUpdate,
 }: MainContentProps) {
   const { i18n } = useTranslation();
@@ -676,7 +678,7 @@ function MainContent({
     );
   }
 
-  if (!selectedProject) {
+  if (!selectedProject && activeTab !== 'dashboard') {
     return (
       <MainContentStateView
         mode="empty"
@@ -721,21 +723,25 @@ function MainContent({
           handleOpenCronSession={handleOpenCronSession}
           handleOpenAlwaysOnSession={handleOpenAlwaysOnSession}
           editorExpanded={editorExpanded}
+          onDeselectProject={onDeselectProject}
+          onSelectProjectByName={onSelectProjectByName}
         />
 
-        <EditorSidebar
-          editingFile={editingFile}
-          isMobile={isMobile}
-          editorExpanded={editorExpanded}
-          editorWidth={editorWidth}
-          hasManualWidth={hasManualWidth}
-          resizeHandleRef={resizeHandleRef}
-          onResizeStart={handleResizeStart}
-          onCloseEditor={handleCloseEditor}
-          onToggleEditorExpand={handleToggleEditorExpand}
-          projectPath={selectedProject.path}
-          fillSpace={activeTab === 'files'}
-        />
+        {selectedProject && (
+          <EditorSidebar
+            editingFile={editingFile}
+            isMobile={isMobile}
+            editorExpanded={editorExpanded}
+            editorWidth={editorWidth}
+            hasManualWidth={hasManualWidth}
+            resizeHandleRef={resizeHandleRef}
+            onResizeStart={handleResizeStart}
+            onCloseEditor={handleCloseEditor}
+            onToggleEditorExpand={handleToggleEditorExpand}
+            projectPath={selectedProject.path}
+            fillSpace={activeTab === 'files'}
+          />
+        )}
       </div>
       {toast ? (
         <div
@@ -756,7 +762,7 @@ function MainContent({
 // and existing transcripts. Files can pair with Agent in split view; focused
 // tools such as Always-On, Dashboard, Tasks, and Memory render full-screen.
 type SplitBodyProps = {
-  selectedProject: Project;
+  selectedProject: Project | null;
   selectedSession: any;
   activeTab: string;
   shouldShowTasksTab: boolean;
@@ -787,6 +793,8 @@ type SplitBodyProps = {
   handleOpenCronSession: (job: CronJobOverview) => void;
   handleOpenAlwaysOnSession: (target: AlwaysOnSessionTarget) => void | Promise<void>;
   editorExpanded: boolean;
+  onDeselectProject?: () => void;
+  onSelectProjectByName?: (projectName: string) => void;
 };
 
 function SplitBody(props: SplitBodyProps) {
@@ -822,6 +830,8 @@ function SplitBody(props: SplitBodyProps) {
     handleOpenCronSession,
     handleOpenAlwaysOnSession,
     editorExpanded,
+    onDeselectProject,
+    onSelectProjectByName,
   } = props;
 
   // Render-mode taxonomy:
@@ -925,7 +935,7 @@ function SplitBody(props: SplitBodyProps) {
         />
       );
     }
-    if (activeTab === 'dashboard') return <DashboardV2 projectFilter={selectedProject?.name} />;
+    if (activeTab === 'dashboard') return <DashboardV2 projectFilter={selectedProject?.name} onSelectProject={onSelectProjectByName} onDeselectProject={onDeselectProject} />;
     if (activeTab === 'memory') return <MemoryPanel selectedProject={selectedProject} />;
     if (activeTab === 'skills') return <SkillsV2 selectedProject={selectedProject} />;
     if (renderTasksAsTool) return <TasksV2 isVisible />;

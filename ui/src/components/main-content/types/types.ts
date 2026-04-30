@@ -57,6 +57,8 @@ export type MainContentProps = {
   // consumers don't need it.
   onSelectSession?: (project: Project, sessionId: string, fallbackSession?: ProjectSession) => void;
   onShowSettings: () => void;
+  onDeselectProject?: () => void;
+  onSelectProjectByName?: (projectName: string) => void;
   externalMessageUpdate: number;
 };
 

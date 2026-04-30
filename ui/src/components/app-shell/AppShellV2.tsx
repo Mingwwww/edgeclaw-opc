@@ -134,6 +134,8 @@ export default function AppShellV2() {
     handleProjectSelect,
     handleSessionSelect,
     handleNewSession,
+    handleDeselectProject,
+    setSelectedProject,
     loadMoreSessions,
     loadingMoreProjectIds,
   } = useProjectsState({
@@ -553,6 +555,7 @@ export default function AppShellV2() {
 	      onRequestDeleteProject={handleRequestDeleteProject}
 	      onRequestDeleteSession={handleRequestDeleteSession}
 	      onShowSettings={onShowSettings}
+	      onDeselectProject={handleDeselectProject}
 	      onCollapse={onCollapseSidebar}
 	      onLoadMoreSessions={loadMoreSessions}
 	      loadingMoreProjectIds={loadingMoreProjectIds}
@@ -614,6 +617,16 @@ export default function AppShellV2() {
           onStartNewSession={handleNewSession}
           onSelectSession={handleSelectSession}
           onShowSettings={onShowSettings}
+          onDeselectProject={handleDeselectProject}
+          onSelectProjectByName={(name: string) => {
+            const target = sidebarSharedProps.projects.find((p) => p.name === name);
+            if (target) {
+              setSelectedProject(target);
+              setSelectedSession(null);
+              setActiveTab('dashboard');
+              navigate(`/p/${encodeURIComponent(target.name)}`);
+            }
+          }}
           isSidebarCollapsed={!isMobile && !desktopSidebarOpen}
           onOpenSidebar={onOpenDesktopSidebar}
           externalMessageUpdate={externalMessageUpdate}

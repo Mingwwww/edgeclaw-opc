@@ -654,6 +654,12 @@ export function useProjectsState({
     [navigate, selectedProject?.name],
   );
 
+  const handleDeselectProject = useCallback(() => {
+    setSelectedProject(null);
+    setSelectedSession(null);
+    navigate('/');
+  }, [navigate]);
+
   const sidebarSharedProps = useMemo(
     () => ({
       projects,
@@ -717,6 +723,8 @@ export function useProjectsState({
     handleNewSession,
     handleSessionDelete,
     handleProjectDelete,
+    handleDeselectProject,
+    setSelectedProject,
     handleSidebarRefresh,
     loadMoreSessions,
     loadingMoreProjectIds,

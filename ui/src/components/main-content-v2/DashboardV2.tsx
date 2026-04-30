@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Activity,
   AlertCircle,
+  ArrowLeft,
   ChevronDown,
   ChevronRight,
   DollarSign,
@@ -225,9 +226,11 @@ function buildProjectGroups(
 
 export type DashboardV2Props = {
   projectFilter?: string | null;
+  onSelectProject?: (projectName: string) => void;
+  onDeselectProject?: () => void;
 };
 
-export default function DashboardV2({ projectFilter }: DashboardV2Props = {}) {
+export default function DashboardV2({ projectFilter, onSelectProject, onDeselectProject }: DashboardV2Props = {}) {
   const { t } = useTranslation('routing');
   const { data, loading, error, refresh } = useRoutingDashboard();
 
@@ -324,6 +327,16 @@ export default function DashboardV2({ projectFilter }: DashboardV2Props = {}) {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
+            {projectFilter && onDeselectProject ? (
+              <button
+                type="button"
+                onClick={onDeselectProject}
+                className="mb-1 inline-flex items-center gap-1 text-[13px] text-neutral-500 transition hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <span>Overview</span>
+              </button>
+            ) : null}
             <h2 className="text-[20px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
               {t('dashboard.title', { defaultValue: 'Dashboard' })}
             </h2>
@@ -416,7 +429,7 @@ export default function DashboardV2({ projectFilter }: DashboardV2Props = {}) {
           </div>
         )}
 
-        {/* Global view: collapsible project groups + recent routes */}
+        {/* Global view: project cost cards grid + recent routes */}
         {!projectFilter && (
           <>
             {(groups.length > 0 || generalGroup) && (
@@ -424,10 +437,12 @@ export default function DashboardV2({ projectFilter }: DashboardV2Props = {}) {
                 <div className="text-xxs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   {t('dashboard.projects.title', { defaultValue: 'By project' })}
                 </div>
-                {groups.map((grp) => (
-                  <ProjectGroupCard key={grp.name} group={grp} />
-                ))}
-                {generalGroup && <ProjectGroupCard group={generalGroup} defaultOpen={groups.length === 0} />}
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {groups.map((grp) => (
+                    <ProjectCostCard key={grp.name} group={grp} onClick={onSelectProject ? () => onSelectProject(grp.name) : undefined} />
+                  ))}
+                  {generalGroup && <ProjectCostCard group={generalGroup} />}
+                </div>
               </div>
             )}
 
@@ -559,6 +574,83 @@ function ProjectGroupCard({
         </div>
       )}
     </div>
+  );
+}
+
+const TIER_COLORS: Record<string, string> = {
+  SIMPLE: 'bg-emerald-400 dark:bg-emerald-500',
+  MEDIUM: 'bg-blue-400 dark:bg-blue-500',
+  COMPLEX: 'bg-amber-400 dark:bg-amber-500',
+  REASONING: 'bg-purple-400 dark:bg-purple-500',
+  HARD: 'bg-red-400 dark:bg-red-500',
+};
+
+function TierBar({ byTier }: { byTier: Record<string, { estimatedCost?: number; requestCount?: number }> }) {
+  const entries = Object.entries(byTier).filter(([, b]) => (b?.requestCount ?? 0) > 0);
+  if (entries.length === 0) return null;
+  const total = entries.reduce((s, [, b]) => s + (b?.estimatedCost ?? 0), 0) || 1;
+
+  return (
+    <div className="mt-2.5 space-y-1.5">
+      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
+        {entries.map(([tier, b]) => {
+          const pct = ((b?.estimatedCost ?? 0) / total) * 100;
+          if (pct < 0.5) return null;
+          return (
+            <div
+              key={tier}
+              className={cn('h-full', TIER_COLORS[tier] || 'bg-neutral-400')}
+              style={{ width: `${pct}%` }}
+              title={`${tier}: ${formatCost(b?.estimatedCost ?? 0)}`}
+            />
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+        {entries.map(([tier, b]) => (
+          <span key={tier} className="inline-flex items-center gap-1 text-[10px] text-neutral-500 dark:text-neutral-400">
+            <span className={cn('inline-block h-1.5 w-1.5 rounded-full', TIER_COLORS[tier] || 'bg-neutral-400')} />
+            <span>{tier}</span>
+            <span className="tabular-nums">{formatCost(b?.estimatedCost ?? 0)}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProjectCostCard({ group, onClick }: { group: ProjectGroup; onClick?: () => void }) {
+  const agg = group.aggregated;
+  const cost = agg.total.estimatedCost || 0;
+  const requests = agg.total.requestCount || 0;
+  const tokens = agg.total.totalTokens || 0;
+  const Tag = onClick ? 'button' : 'div';
+
+  return (
+    <Tag
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={cn(
+        'flex flex-col rounded-xl border border-neutral-200 bg-white p-4 text-left dark:border-neutral-800 dark:bg-neutral-950',
+        onClick && 'cursor-pointer transition hover:border-neutral-300 hover:shadow-sm dark:hover:border-neutral-700',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-500" strokeWidth={1.75} />
+            <span className="truncate text-[13px] font-medium text-neutral-800 dark:text-neutral-200">{group.displayName}</span>
+          </div>
+          <div className="text-xxs mt-1 text-neutral-500 dark:text-neutral-400">
+            {requests} requests · {formatTokens(tokens)} tokens · {agg.sessionCount} sessions
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-[18px] font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{formatCost(cost)}</div>
+        </div>
+      </div>
+      <TierBar byTier={agg.byTier || {}} />
+    </Tag>
   );
 }
 

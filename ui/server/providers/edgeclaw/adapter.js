@@ -15,7 +15,13 @@ import { createNormalizedMessage, generateMessageId } from '../types.js';
 import { extractSlashCommandInvocation, isInternalContent, isInterruptedNotice } from '../utils.js';
 
 const PROVIDER = 'claude';
-const TASK_NOTIFICATION_REGEX = /<task-notification>\s*<task-id>([\s\S]*?)<\/task-id>\s*<output-file>([\s\S]*?)<\/output-file>\s*<status>([\s\S]*?)<\/status>\s*<summary>([\s\S]*?)<\/summary>\s*<\/task-notification>/i;
+const TASK_NOTIFICATION_OUTER = /<task-notification>([\s\S]*?)<\/task-notification>/i;
+const TASK_FIELD_REGEX = {
+  taskId: /<task-id>([\s\S]*?)<\/task-id>/i,
+  outputFile: /<output-file>([\s\S]*?)<\/output-file>/i,
+  status: /<status>([\s\S]*?)<\/status>/i,
+  summary: /<summary>([\s\S]*?)<\/summary>/i,
+};
 
 function asArray(value) {
   return Array.isArray(value) ? value : [value];
@@ -137,17 +143,22 @@ function parseTaskNotification(content) {
     return null;
   }
 
-  const match = content.match(TASK_NOTIFICATION_REGEX);
-  if (!match) {
+  const outer = content.match(TASK_NOTIFICATION_OUTER);
+  if (!outer) {
     return null;
   }
 
-  const [, taskId = '', outputFile = '', status = '', summary = ''] = match;
+  const body = outer[1];
+  const extract = (regex) => {
+    const m = body.match(regex);
+    return m ? m[1].trim() : '';
+  };
+
   return {
-    taskId: taskId.trim(),
-    outputFile: outputFile.trim(),
-    status: status.trim(),
-    summary: summary.trim(),
+    taskId: extract(TASK_FIELD_REGEX.taskId),
+    outputFile: extract(TASK_FIELD_REGEX.outputFile),
+    status: extract(TASK_FIELD_REGEX.status),
+    summary: extract(TASK_FIELD_REGEX.summary),
   };
 }
 

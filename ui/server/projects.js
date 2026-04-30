@@ -1345,7 +1345,13 @@ async function parseJsonlSessions(filePath) {
               session.summary = entry.summary;
             }
 
-            // Track last user and assistant messages (skip system messages)
+            // Track last user and assistant messages (skip system/meta messages)
+            if (entry.isMeta === true) {
+              // SDK-injected continuation messages (skill briefings, task notifications, etc.)
+              session.messageCount++;
+              if (entry.timestamp) session.lastActivity = new Date(entry.timestamp);
+              continue;
+            }
             if (entry.message?.role === 'user' && entry.message?.content) {
               const content = entry.message.content;
 
@@ -1361,6 +1367,7 @@ async function parseJsonlSessions(filePath) {
                 textContent.startsWith('<command-args>') ||
                 textContent.startsWith('<local-command-stdout>') ||
                 textContent.startsWith('<system-reminder>') ||
+                textContent.startsWith('<task-notification>') ||
                 textContent.startsWith('Caveat:') ||
                 textContent.startsWith('This session is being continued from a previous') ||
                 textContent.startsWith('Invalid API key') ||
