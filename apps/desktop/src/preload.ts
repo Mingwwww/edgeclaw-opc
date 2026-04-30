@@ -24,13 +24,42 @@ contextBridge.exposeInMainWorld("edgeclaw", {
   }> => ipcRenderer.invoke("get-server-status"),
 });
 
+/**
+ * Splash window IPC bridge. Only the splash renderer uses this; other
+ * windows ignore it. The splash is purely a one-way display — main
+ * pushes status updates, renderer just renders. We expose only an
+ * `onStatus` subscription, never `send` back, so a compromised splash
+ * can't trigger any privileged main-process action.
+ */
+contextBridge.exposeInMainWorld("edgeclawSplash", {
+  onStatus: (
+    callback: (payload: { text?: string; footer?: string }) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: { text?: string; footer?: string },
+    ): void => {
+      try {
+        callback(payload);
+      } catch {
+        /* swallow renderer-side errors so a bad listener can't kill the splash */
+      }
+    };
+    ipcRenderer.on("splash:status", listener);
+    return () => ipcRenderer.removeListener("splash:status", listener);
+  },
+});
+
 contextBridge.exposeInMainWorld("edgeclawOnboarding", {
   save: (payload: {
     providerType: string;
     baseUrl: string;
     apiKey: string;
     model: string;
+    workspaceRoot: string;
   }): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke("onboarding:save", payload),
+  pickWorkspaceDir: (currentValue?: string): Promise<string | null> =>
+    ipcRenderer.invoke("onboarding:pickWorkspaceDir", currentValue),
   cancel: (): void => ipcRenderer.send("onboarding:cancel"),
 });
