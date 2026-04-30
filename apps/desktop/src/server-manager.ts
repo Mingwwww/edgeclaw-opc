@@ -14,6 +14,9 @@
  */
 
 import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { promisify } from "node:util";
+import { execFile as execFileCb } from "node:child_process";
+const execFile = promisify(execFileCb);
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs/promises";
@@ -270,6 +273,14 @@ export type ServerManagerEvents = {
   error: [error: Error];
   restarting: [attempt: number];
   "max-restarts": [];
+  /**
+   * Phase-label updates emitted while start() is in flight. Consumed by
+   * the splash window so users get visible feedback during the long
+   * first-launch tarball extraction. Strings are user-facing Chinese
+   * copy — keep them short (≤ 24 chars) and end-state-shaped (e.g.
+   * "解压 claudecodeui (560MB)..." not "Extracting...").
+   */
+  progress: [phase: string];
 };
 
 export class ServerManager extends EventEmitter<ServerManagerEvents> {
@@ -306,13 +317,20 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
    * marker. The marker stores the source tarball mtime+size so that if the
    * bundled tar is updated (e.g. after an in-place reinstall over the same
    * version) we re-extract automatically.
+   *
+   * Switched from `execSync('tar xf ...')` to `await execFile('tar', ...)`
+   * so the Electron main loop can keep handling IPC (in particular the
+   * splash window's status-update channel) while the ~700MB total of
+   * bundled tarballs is unpacked. Sync extraction blocked the main thread
+   * for tens of seconds on cold APFS caches; the splash text would freeze
+   * mid-update and users would assume the app crashed.
    */
-  private ensureBundleExtracted(
+  private async ensureBundleExtracted(
     tarballSourceDir: string,
     runtimeBaseDir: string,
     tarballName: string,
     destDirName: string,
-  ): string {
+  ): Promise<string> {
     const destDir = path.join(runtimeBaseDir, destDirName);
     const tarball = path.join(tarballSourceDir, tarballName);
     const marker = path.join(destDir, ".extracted");
@@ -336,14 +354,27 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     // Fresh extract: nuke any partial leftover so we don't merge stale + new
     // payloads (could happen if a previous extraction was interrupted).
     if (fsSync.existsSync(destDir)) {
-      fsSync.rmSync(destDir, { recursive: true, force: true });
+      this.emit("progress", `清理旧 ${destDirName}…`);
+      await fs.rm(destDir, { recursive: true, force: true });
     }
-    fsSync.mkdirSync(destDir, { recursive: true });
-    execSync(`tar xf "${tarball}" -C "${destDir}"`, {
-      stdio: "ignore",
+    await fs.mkdir(destDir, { recursive: true });
+
+    // Show size in the progress label so users can roughly estimate how
+    // long this phase will take (rule of thumb: ~1MB/100ms on warm SSD).
+    const sizeMB = Math.round(tarStat.size / 1024 / 1024);
+    this.emit(
+      "progress",
+      `解压 ${destDirName} (~${sizeMB}MB)…首次安装可能需要 30 秒`,
+    );
+
+    await execFile("/usr/bin/tar", ["xf", tarball, "-C", destDir], {
       timeout: 180_000,
+      // Don't capture stdout/stderr to memory; tar is intentionally quiet
+      // unless something fails, in which case it writes to stderr and
+      // exits non-zero — execFile rejects with the stderr captured for us.
+      maxBuffer: 1024 * 1024,
     });
-    fsSync.writeFileSync(marker, expectedMarker);
+    await fs.writeFile(marker, expectedMarker);
     return destDir;
   }
 
@@ -372,13 +403,13 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     }
   }
 
-  private resolvePaths(): {
+  private async resolvePaths(): Promise<{
     nodeBin: string;
     bunBin: string;
     serverEntry: string;
     serverCwd: string;
     claudeCodeMainDir: string;
-  } {
+  }> {
     if (this.dev) {
       const root = this.devRepoRoot;
       if (!root)
@@ -420,23 +451,30 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     }
     const runtimeBaseDir = getRuntimeBaseDir(this.appVersion);
     fsSync.mkdirSync(runtimeBaseDir, { recursive: true });
+    this.emit("progress", "清理旧版本 runtime 缓存…");
     this.cleanupStaleRuntimeVersions(this.appVersion);
 
     // Order matters only for clarity; resolution at runtime is via ../../../
     // path walks so all three must end up as siblings inside runtimeBaseDir.
-    this.ensureBundleExtracted(
+    // Each ensureBundleExtracted is awaited *sequentially* (not Promise.all)
+    // because: (a) tar is single-threaded I/O bound — parallel extraction
+    // saturates the disk and gives no wall-clock win; (b) sequential
+    // execution means the splash status label tracks reality (one tarball
+    // at a time) instead of showing one phase while three race in the
+    // background.
+    await this.ensureBundleExtracted(
       resources,
       runtimeBaseDir,
       "edgeclaw-memory-core-bundle.tar",
       "edgeclaw-memory-core",
     );
-    const claudeCodeUiDir = this.ensureBundleExtracted(
+    const claudeCodeUiDir = await this.ensureBundleExtracted(
       resources,
       runtimeBaseDir,
       "claudecodeui-bundle.tar",
       "claudecodeui",
     );
-    const claudeCodeMainDir = this.ensureBundleExtracted(
+    const claudeCodeMainDir = await this.ensureBundleExtracted(
       resources,
       runtimeBaseDir,
       "claude-code-main-bundle.tar",
@@ -689,8 +727,9 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     // here, the parent server waits on the new port but the spawned proxy.ts
     // still binds runtime.proxyPort from yaml → mismatch. Leave proxy port
     // to YAML so parent + child agree.
+    this.emit("progress", "准备 runtime 资源…");
     const { nodeBin, bunBin, serverEntry, serverCwd, claudeCodeMainDir } =
-      this.resolvePaths();
+      await this.resolvePaths();
 
     if (!fsSync.existsSync(nodeBin)) {
       throw new Error(`Bundled Node not found at ${nodeBin}`);
@@ -758,6 +797,7 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
 
     await this.writePidFile(child.pid);
 
+    this.emit("progress", "等待本地服务就绪…");
     try {
       await waitForServerHealth(chosenPort, child);
     } catch (err) {

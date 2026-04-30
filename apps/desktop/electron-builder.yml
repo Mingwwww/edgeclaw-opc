@@ -67,5 +67,6 @@ extraResources:
 files:
   - "dist/**/*"
   - "onboarding/**/*"
+  - "splash/**/*"
   - "node_modules/**/*"
   - "package.json"

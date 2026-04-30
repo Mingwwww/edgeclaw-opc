@@ -17,6 +17,7 @@ import * as path from "node:path";
 import { validateEdgeClawConfigFile } from "./config-validator";
 import { showOnboardingWindow } from "./onboarding-window";
 import { ServerManager } from "./server-manager";
+import { resolveSplashHtmlPath, showSplashWindow } from "./splash-window";
 
 app.setName("EdgeClaw");
 
@@ -207,7 +208,10 @@ function registerIpcHandlers(): void {
   }));
 }
 
-function createMainWindow(port: number): BrowserWindow {
+function createMainWindow(
+  port: number,
+  options: { onReadyToShow?: () => void } = {},
+): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -233,7 +237,16 @@ function createMainWindow(port: number): BrowserWindow {
     }
   });
 
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    win.show();
+    if (options.onReadyToShow) {
+      try {
+        options.onReadyToShow();
+      } catch {
+        /* ignore — splash close is best-effort */
+      }
+    }
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -300,11 +313,31 @@ if (!gotLock) {
       });
     });
 
+    // Splash window — shown immediately so the user has a visible "I'm
+    // working on it" surface during the slow first-launch tarball
+    // extraction (~700MB) and the subsequent server health-check wait.
+    // Its sole job is showing the current phase label that ServerManager
+    // emits via 'progress'. Lifetime-scoped to the start() attempt: torn
+    // down either when the main window's first paint fires (success) or
+    // before any error dialog appears (failure).
+    const splash = showSplashWindow({
+      preloadPath: path.join(__dirname, "preload.js"),
+      htmlPath: resolveSplashHtmlPath(),
+    });
+    splash.setStatus(
+      "准备启动…",
+      `EdgeClaw v${app.getVersion()} · ${process.platform}-${process.arch}`,
+    );
+    const onProgress = (phase: string): void => splash.setStatus(phase);
+    serverManager.on("progress", onProgress);
+
     let port: number;
     try {
       const started = await serverManager.start();
       port = started.port;
     } catch (e: unknown) {
+      serverManager.off("progress", onProgress);
+      splash.close();
       const msg = e instanceof Error ? e.message : String(e);
       const { headline, detail } = summarizeStartupFailure(msg);
       const choice = await dialog.showMessageBox({
@@ -326,7 +359,13 @@ if (!gotLock) {
       return;
     }
 
-    mainWindow = createMainWindow(port);
+    splash.setStatus("加载界面…");
+    mainWindow = createMainWindow(port, {
+      onReadyToShow: () => {
+        serverManager.off("progress", onProgress);
+        splash.close();
+      },
+    });
   });
 }
 
