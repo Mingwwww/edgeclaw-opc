@@ -451,12 +451,12 @@ step "Create DMG"
 #   • "EdgeClaw"          → blocked (matches CFBundleName)
 #   • "EdgeClaw 0.1.0"    → blocked (CFBundleName + space + token)
 #   • "EdgeClaw Installer"→ OK
-#   • "Install EdgeClaw"  → OK   ← used here for friendlier Finder display
-#   • "EdgeClaw-0.1.0"    → OK   (hyphen instead of space)
+#   • "Install EdgeClaw"  → was OK on older macOS; on darwin 25+ the form
+#     "Install EdgeClaw 0.1.0" (version suffix) triggers ditto EPERM — avoid.
+#   • "EdgeClaw-0.1.0" / "EdgeClaw-0.1.0-Installer" → OK (hyphenated forms)
 # The pattern appears to be: TCC App Management blocks copying a notarized
-# .app into a volume whose name STARTS with `<CFBundleName><whitespace>` and
-# the next token isn't a known word like "Installer". Safer to avoid the
-# pattern entirely.
+# .app into a volume whose name matches certain "app-like" titles. Safer to
+# use a hyphenated volname that cannot be read as "<BrandName> <semver>".
 #
 # Other learned constraints:
 #   • Format ULMO/APFS combo breaks; HFS+ + UDZO is universally portable.
@@ -469,7 +469,7 @@ rm -f "$DMG_OUT"
 
 APP_MB=$(du -sm "$APP_OUT" | awk '{print $1}')
 ALLOC=$((APP_MB + 300))
-VOLNAME="Install EdgeClaw ${VERSION}"
+VOLNAME="EdgeClaw-${VERSION}-Installer"
 RW_DMG="$(mktemp -t edgeclaw-rw.XXXX).dmg"
 trap 'rm -f "$RW_DMG"; mount | awk -v v="$VOLNAME" "\$0 ~ v {print \$1}" | xargs -I{} hdiutil detach {} -force >/dev/null 2>&1 || true' EXIT
 
