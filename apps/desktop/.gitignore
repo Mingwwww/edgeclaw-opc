@@ -8,3 +8,6 @@ resources/claude-code-main-bundle.tar
 resources/edgeclaw-memory-core-bundle.tar
 *.log
 .DS_Store
+
+# Stray copy — canonical file is dist/build-info.json (dist/ is ignored)
+build-info.json
