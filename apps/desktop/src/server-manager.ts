@@ -204,9 +204,29 @@ async function cleanupStaleOrOrphanPid(): Promise<void> {
   }
 }
 
-async function waitForServerHealth(port: number): Promise<void> {
+/**
+ * Poll http://127.0.0.1:<port>/health until it returns `{status: "ok"}` or
+ * we hit the startup timeout.
+ *
+ * If `child` is provided, we additionally short-circuit the moment the
+ * child process exits (exitCode !== null || signalCode !== null). Without
+ * this fast-fail, a child that crashes ~10ms after spawn (e.g. because
+ * load-env.js threw on missing config) still keeps us polling for the full
+ * 60-second deadline before the user sees the error dialog.
+ */
+async function waitForServerHealth(
+  port: number,
+  child?: ChildProcess,
+): Promise<void> {
   const deadline = Date.now() + STARTUP_HEALTH_TIMEOUT_MS;
   while (Date.now() < deadline) {
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
+      throw new Error(
+        `Server child exited before becoming healthy (code=${
+          child.exitCode ?? "null"
+        }, signal=${child.signalCode ?? "null"})`,
+      );
+    }
     try {
       const res = await fetch(`http://127.0.0.1:${port}/health`, {
         signal: AbortSignal.timeout(HEALTH_REQUEST_TIMEOUT_MS),
@@ -265,6 +285,14 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
   private restartAttempts = 0;
   private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private exitHandlerBound = false;
+  /**
+   * Set to true while the very first start() is in flight. The exit watchdog
+   * checks this and refuses to schedule a restart until the initial start
+   * either succeeds or rejects, otherwise an early-crashing child triggers
+   * concurrent restart attempts that race against the still-pending health
+   * polling loop (and double-emit "error" events).
+   */
+  private initialStartInFlight = false;
 
   constructor(options: ServerManagerOptions = {}) {
     super();
@@ -589,6 +617,15 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
 
       if (this.stopRequested) return;
 
+      // While the very first start is still pending, let the outer
+      // startProcessAndWaitReady -> waitForServerHealth() short-circuit
+      // path surface the failure (it already collects the log tail and
+      // throws via start() -> caller). Skipping watchdog work here keeps
+      // us from emitting a duplicate "error" event before the caller's
+      // try/catch attaches its handler, and from spawning concurrent
+      // restart attempts that race the still-pending health poll loop.
+      if (this.initialStartInFlight) return;
+
       const err = new Error(
         `Server exited unexpectedly (code=${code ?? "null"}, signal=${signal ?? "null"})`,
       );
@@ -722,7 +759,7 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
     await this.writePidFile(child.pid);
 
     try {
-      await waitForServerHealth(chosenPort);
+      await waitForServerHealth(chosenPort, child);
     } catch (err) {
       this.stopRequested = true;
       await this.killChildGracefully();
@@ -769,15 +806,18 @@ export class ServerManager extends EventEmitter<ServerManagerEvents> {
 
     this.stopRequested = false;
     this.restartAttempts = 0;
+    this.initialStartInFlight = true;
 
     this.startPromise = (async () => {
       try {
         const { port } = await this.startProcessAndWaitReady();
         this.port = port;
+        this.initialStartInFlight = false;
         this.emit("ready", port);
         this.scheduleStableReset();
         return { port };
       } catch (e: unknown) {
+        this.initialStartInFlight = false;
         const err = e instanceof Error ? e : new Error(String(e));
         this.emit("error", err);
         throw err;

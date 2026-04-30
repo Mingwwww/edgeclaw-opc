@@ -18,6 +18,26 @@ mac:
   entitlementsInherit: resources/entitlements.mac.plist
   minimumSystemVersion: "12.0"
   darkModeSupport: true
+  # Without these *UsageDescription strings, macOS TCC popups appear with an
+  # empty body — users see a generic "EdgeClaw 想要访问 ..." prompt and have
+  # no idea why, which is half of the "陆陆续续蹦出来权限请求窗口" complaint.
+  # Each string is what shows up in the system dialog AND in
+  # System Settings → Privacy & Security → <category> → EdgeClaw.
+  extendInfo:
+    NSDocumentsFolderUsageDescription: >-
+      EdgeClaw 需要访问"文稿"目录以便加载和保存你授权的 workspace 项目内容。
+    NSDownloadsFolderUsageDescription: >-
+      EdgeClaw 需要访问"下载"目录以便处理你拖入对话窗口的附件。
+    NSDesktopFolderUsageDescription: >-
+      EdgeClaw 需要访问"桌面"目录以便加载放在桌面上的 workspace 项目内容。
+    NSRemovableVolumesUsageDescription: >-
+      EdgeClaw 需要访问可移除磁盘上的 workspace 项目内容。
+    NSAppleEventsUsageDescription: >-
+      EdgeClaw 在使用浏览器自动化技能时需要控制 Google Chrome / Chromium 实例。
+    NSCameraUsageDescription: >-
+      EdgeClaw 不主动使用摄像头；当用户授权的 plugin/MCP 调用涉及摄像头时才会请求。
+    NSMicrophoneUsageDescription: >-
+      EdgeClaw 不主动使用麦克风；当用户授权的 plugin/MCP 调用涉及麦克风时才会请求。
 
 dmg:
   sign: true

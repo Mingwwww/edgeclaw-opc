@@ -16,7 +16,9 @@
     "download-node": "bash scripts/download-node.sh",
     "download-bun": "bash scripts/download-bun.sh"
   },
-  "dependencies": {},
+  "dependencies": {
+    "yaml": "^2.8.3"
+  },
   "devDependencies": {
     "@electron/notarize": "^3.0.0",
     "@types/node": "^22.0.0",
