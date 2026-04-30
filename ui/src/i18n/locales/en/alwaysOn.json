@@ -2,6 +2,7 @@
   "title": "Always-On",
   "subtitle": "Background discovery agent for this project.",
   "emptyProject": "Pick a project to view Always-On.",
+  "sessionMissing": "This chat record no longer exists.",
   "actions": {
     "back": "Back",
     "refresh": "Refresh",
@@ -83,6 +84,7 @@
       "scope": "Scope",
       "lastFiredAt": "Last fired",
       "originSessionId": "Origin session",
+      "sessionId": "Session ID",
       "transcriptKey": "Transcript key"
     },
     "context": {

@@ -588,6 +588,7 @@ export default function AppShellV2() {
 
       <main className="flex min-w-0 flex-1 flex-col">
         <MainAreaV2
+          projects={sidebarSharedProps.projects}
           selectedProject={selectedProject}
           selectedSession={selectedSession}
           activeTab={activeTab}

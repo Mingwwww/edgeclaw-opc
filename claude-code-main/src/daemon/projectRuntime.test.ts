@@ -101,7 +101,7 @@ describe('ProjectRuntime', () => {
       sourceId: 'cron-1',
       status: 'running',
       parentSessionId: 'origin-session',
-      relativeTranscriptPath: join('origin-session', 'subagents', 'cron-thread-1'),
+      relativeTranscriptPath: join('origin-session', 'subagents', 'agent-cron-thread-1.jsonl'),
     })
     expect(events[1]).toMatchObject({
       runId: 'run-1',

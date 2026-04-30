@@ -8,7 +8,7 @@ import PermissionsSettingsTab from '../view/tabs/PermissionsSettingsTab';
 import { useSettingsController } from '../hooks/useSettingsController';
 import type { SettingsProps } from '../types/types';
 
-function Settings({ isOpen, onClose, initialTab = 'appearance' }: SettingsProps) {
+function Settings({ isOpen, onClose, projects = [], initialTab = 'appearance' }: SettingsProps) {
   const { t } = useTranslation('settings');
   const {
     activeTab,
@@ -64,7 +64,7 @@ function Settings({ isOpen, onClose, initialTab = 'appearance' }: SettingsProps)
 
               {activeTab === 'permissions' && <PermissionsSettingsTab />}
 
-              {activeTab === 'config' && <EdgeClawConfigTab />}
+              {activeTab === 'config' && <EdgeClawConfigTab projects={projects} />}
             </div>
           </main>
         </div>

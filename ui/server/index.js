@@ -1662,7 +1662,8 @@ function handleChatConnection(ws, request) {
     const clientId = alwaysOnHeartbeat.getWriterId(ws);
     const cronDaemonLease = startCronDaemonClientLease({
         clientId,
-        clientKind: 'webui'
+        clientKind: 'webui',
+        getProjectRoots: () => alwaysOnHeartbeat.getProjectRoots(ws)
     });
     let cleanedUp = false;
 

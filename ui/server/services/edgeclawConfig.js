@@ -11,6 +11,23 @@ const MASK = '********';
 const SECRET_KEY_RE = /(api[_-]?key|token|secret|password|auth[_-]?token|access[_-]?token|bot[_-]?token|app[_-]?token|encoding[_-]?aes[_-]?key)$/i;
 const SECRET_EXACT_KEYS = new Set(['key', 'apiKey', 'api_key', 'authToken', 'accessToken']);
 
+function defaultAlwaysOnConfig() {
+  return {
+    discovery: {
+      trigger: {
+        enabled: false,
+        tickIntervalMinutes: 5,
+        cooldownMinutes: 60,
+        dailyBudget: 4,
+        heartbeatStaleSeconds: 90,
+        recentUserMsgMinutes: 5,
+        preferClient: 'webui',
+      },
+      projects: {},
+    },
+  };
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -222,20 +239,8 @@ export function buildDefaultEdgeClawConfig() {
         default: 'inherit',
         params: {},
       },
-      alwaysOn: {
-        discovery: {
-          trigger: {
-            enabled: false,
-            tickIntervalMinutes: 5,
-            cooldownMinutes: 60,
-            dailyBudget: 4,
-            heartbeatStaleSeconds: 90,
-            recentUserMsgMinutes: 5,
-            preferClient: 'webui',
-          },
-        },
-      },
     },
+    alwaysOn: defaultAlwaysOnConfig(),
     memory: {
       enabled: true,
       model: 'inherit',
@@ -334,6 +339,9 @@ export function buildDefaultEdgeClawConfig() {
 }
 
 export function getEdgeClawConfigPath() {
+  if (process.env.EDGECLAW_CONFIG_PATH?.trim()) {
+    return process.env.EDGECLAW_CONFIG_PATH.trim();
+  }
   return DEFAULT_CONFIG_PATH;
 }
 
@@ -349,7 +357,18 @@ export function readEdgeClawConfigFile() {
 }
 
 export function normalizeEdgeClawConfig(input) {
-  const normalized = deepMerge(buildDefaultEdgeClawConfig(), isRecord(input) ? input : {});
+  const raw = isRecord(input) ? input : {};
+  const normalized = deepMerge(buildDefaultEdgeClawConfig(), raw);
+  const legacyTrigger = raw?.agents?.alwaysOn?.discovery?.trigger;
+  if (isRecord(legacyTrigger) && !isRecord(raw?.alwaysOn?.discovery?.trigger)) {
+    normalized.alwaysOn.discovery.trigger = deepMerge(
+      normalized.alwaysOn.discovery.trigger,
+      legacyTrigger,
+    );
+  }
+  if (isRecord(normalized.agents)) {
+    delete normalized.agents.alwaysOn;
+  }
   delete normalized.compat;
   return normalized;
 }

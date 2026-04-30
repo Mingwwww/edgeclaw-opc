@@ -19,7 +19,7 @@ import { applyConfigEnvironmentVariables } from '../utils/managedEnv.js'
 import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
 import { initializeToolPermissionContext } from '../utils/permissions/permissionSetup.js'
 import { getAgentDefinitionsWithOverrides } from '../tools/AgentTool/loadAgentsDir.js'
-import { appendCronRunLog } from './projectRuntime.js'
+import { appendCronRunHistoryEvent, appendCronRunLog } from './projectRuntime.js'
 import {
   setClientType,
   setCwdState,
@@ -197,6 +197,14 @@ export async function runCronWorker(payload: CronWorkerPayload): Promise<void> {
     )
     return
   }
+
+  await appendCronRunHistoryEvent(
+    payload.projectRoot,
+    payload.task,
+    runId,
+    'running',
+    payload.startedAt,
+  )
 
   try {
     await result.completion

@@ -38,18 +38,20 @@ export interface EdgeClawConfig {
   agents?: {
     main?: { model?: string; params?: Record<string, unknown> }
     subagents?: { default?: string; params?: Record<string, unknown> }
-    alwaysOn?: {
-      discovery?: {
-        trigger?: {
-          enabled?: boolean
-          tickIntervalMinutes?: number
-          cooldownMinutes?: number
-          dailyBudget?: number
-          heartbeatStaleSeconds?: number
-          recentUserMsgMinutes?: number
-          preferClient?: 'webui' | 'tui'
-        }
+    alwaysOn?: unknown
+  }
+  alwaysOn?: {
+    discovery?: {
+      trigger?: {
+        enabled?: boolean
+        tickIntervalMinutes?: number
+        cooldownMinutes?: number
+        dailyBudget?: number
+        heartbeatStaleSeconds?: number
+        recentUserMsgMinutes?: number
+        preferClient?: 'webui' | 'tui'
       }
+      projects?: Record<string, { enabled?: boolean }>
     }
   }
   memory?: {
@@ -77,6 +79,23 @@ export interface ResolvedEdgeClawModel {
 }
 
 const DEFAULT_CONFIG_PATH = join(homedir(), '.edgeclaw', 'config.yaml')
+
+function defaultAlwaysOnConfig(): NonNullable<EdgeClawConfig['alwaysOn']> {
+  return {
+    discovery: {
+      trigger: {
+        enabled: false,
+        tickIntervalMinutes: 5,
+        cooldownMinutes: 60,
+        dailyBudget: 4,
+        heartbeatStaleSeconds: 90,
+        recentUserMsgMinutes: 5,
+        preferClient: 'webui',
+      },
+      projects: {},
+    },
+  }
+}
 
 function normalize(value: string | undefined): string {
   return value?.trim() || ''
@@ -115,20 +134,8 @@ function defaultConfig(): EdgeClawConfig {
     agents: {
       main: { model: 'default', params: {} },
       subagents: { default: 'inherit', params: {} },
-      alwaysOn: {
-        discovery: {
-          trigger: {
-            enabled: false,
-            tickIntervalMinutes: 5,
-            cooldownMinutes: 60,
-            dailyBudget: 4,
-            heartbeatStaleSeconds: 90,
-            recentUserMsgMinutes: 5,
-            preferClient: 'webui',
-          },
-        },
-      },
     },
+    alwaysOn: defaultAlwaysOnConfig(),
     memory: {
       enabled: true,
       model: 'inherit',
@@ -160,6 +167,9 @@ function deepMerge<T>(base: T, override: unknown): T {
 }
 
 export function getEdgeClawConfigPath(): string {
+  if (process.env.EDGECLAW_CONFIG_PATH?.trim()) {
+    return process.env.EDGECLAW_CONFIG_PATH.trim()
+  }
   return DEFAULT_CONFIG_PATH
 }
 
@@ -168,6 +178,20 @@ export function loadEdgeClawConfig(): EdgeClawConfig {
   if (existsSync(configPath)) {
     const parsed = parseYaml(readFileSync(configPath, 'utf8')) ?? {}
     const merged = deepMerge(defaultConfig(), parsed)
+    const raw = parsed as any
+    const legacyTrigger = raw?.agents?.alwaysOn?.discovery?.trigger
+    if (
+      legacyTrigger &&
+      typeof legacyTrigger === 'object' &&
+      !Array.isArray(legacyTrigger) &&
+      !raw?.alwaysOn?.discovery?.trigger
+    ) {
+      ;(merged as any).alwaysOn.discovery.trigger = deepMerge(
+        (merged as any).alwaysOn.discovery.trigger,
+        legacyTrigger,
+      )
+    }
+    delete (merged as any).agents?.alwaysOn
     delete (merged as any).compat
     return merged
   }

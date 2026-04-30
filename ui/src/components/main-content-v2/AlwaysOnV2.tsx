@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type {
+  AlwaysOnSessionTarget,
   AlwaysOnRunHistoryDetail,
   AlwaysOnRunHistoryEntry,
   AlwaysOnRunHistoryStatus,
@@ -35,6 +36,7 @@ type AlwaysOnV2Props = {
   onStartDiscoverySession: () => void | Promise<void>;
   onExecuteDiscoveryPlan: (planId: string, source?: 'manual' | 'auto') => void | Promise<void>;
   onOpenCronSession: (job: CronJobOverview) => void;
+  onOpenSession: (target: AlwaysOnSessionTarget) => void | Promise<void>;
 };
 
 const POLL_INTERVAL_MS = 15_000;
@@ -192,6 +194,7 @@ function formatMetadataValue(value: unknown): string {
 const HIDDEN_RUN_METADATA_KEYS = new Set([
   'source',
   'sourceId',
+  'parentSessionId',
   'logUpdatedAt',
   'logSize',
   'logTruncated',
@@ -266,25 +269,44 @@ function DetailSection({
 function DetailMetaItem({
   label,
   value,
+  children,
+  onClick,
   mono = false,
 }: {
   label: string;
   value?: string | number;
+  children?: ReactNode;
+  onClick?: () => void;
   mono?: boolean;
 }) {
+  const hasValue = value !== null && value !== undefined && value !== '';
+  const displayValue = hasValue ? value : '—';
+  const valueClassName = cn(
+    'break-words text-[13px] text-neutral-800 dark:text-neutral-200',
+    mono && 'font-mono text-[12px]',
+  );
+
   return (
     <div className="space-y-1">
       <div className="text-xxs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-500">
         {label}
       </div>
-      <div
-        className={cn(
-          'break-words text-[13px] text-neutral-800 dark:text-neutral-200',
-          mono && 'font-mono text-[12px]',
-        )}
-      >
-        {value || '—'}
-      </div>
+      {children ? (
+        <div className={valueClassName}>{children}</div>
+      ) : onClick && hasValue ? (
+        <button
+          type="button"
+          onClick={onClick}
+          className={cn(
+            valueClassName,
+            'rounded-sm text-left text-blue-600 outline-none transition hover:text-blue-700 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:text-blue-300',
+          )}
+        >
+          {displayValue}
+        </button>
+      ) : (
+        <div className={valueClassName}>{displayValue}</div>
+      )}
     </div>
   );
 }
@@ -343,6 +365,7 @@ export default function AlwaysOnV2({
   onStartDiscoverySession,
   onExecuteDiscoveryPlan,
   onOpenCronSession,
+  onOpenSession,
 }: AlwaysOnV2Props) {
   const { t } = useTranslation('alwaysOn');
   const [activeSubTab, setActiveSubTab] = useState<AlwaysOnSubTab>('items');
@@ -362,6 +385,11 @@ export default function AlwaysOnV2({
   const [detailRowId, setDetailRowId] = useState<string | null>(null);
 
   const projectName = selectedProject?.name ?? null;
+
+  const openSession = useCallback((target: AlwaysOnSessionTarget | null) => {
+    if (!target) return;
+    void onOpenSession(target);
+  }, [onOpenSession]);
 
   const refresh = useCallback(async () => {
     if (!projectName) {
@@ -797,6 +825,23 @@ export default function AlwaysOnV2({
 
   const renderCronDetail = (row: Extract<AlwaysOnRow, { kind: 'cron' }>) => {
     const { cronJob } = row;
+    const latestRun = cronJob.latestRun;
+    const latestRunTarget =
+      latestRun?.sessionId && latestRun.parentSessionId && latestRun.relativeTranscriptPath
+        ? {
+            kind: 'background' as const,
+            sessionId: latestRun.sessionId,
+            parentSessionId: latestRun.parentSessionId,
+            relativeTranscriptPath: latestRun.relativeTranscriptPath,
+            title: latestRun.summary || cronJob.prompt || cronJob.cron,
+            summary: latestRun.summary || cronJob.prompt || cronJob.cron,
+            lastActivity: latestRun.lastActivity,
+            transcriptKey: latestRun.transcriptKey || cronJob.transcriptKey,
+            taskId: latestRun.taskId,
+            taskStatus: cronJob.status,
+            outputFile: latestRun.outputFile,
+          }
+        : null;
 
     return (
       <>
@@ -822,7 +867,18 @@ export default function AlwaysOnV2({
             </DetailSection>
             <DetailSection title={t('detail.sections.createdFrom', { defaultValue: 'Created From' })}>
               <div className="space-y-4">
-                <DetailMetaItem label={t('detail.fields.originSessionId', { defaultValue: 'Origin session' })} value={cronJob.originSessionId} mono />
+                <DetailMetaItem
+                  label={t('detail.fields.originSessionId', { defaultValue: 'Origin session' })}
+                  value={cronJob.originSessionId}
+                  onClick={cronJob.originSessionId ? () => openSession({ kind: 'origin', sessionId: cronJob.originSessionId! }) : undefined}
+                  mono
+                />
+                <DetailMetaItem
+                  label={t('detail.fields.sessionId', { defaultValue: 'Session ID' })}
+                  value={latestRun?.sessionId}
+                  onClick={latestRunTarget ? () => openSession(latestRunTarget) : undefined}
+                  mono
+                />
                 <DetailMetaItem label={t('detail.fields.transcriptKey', { defaultValue: 'Transcript key' })} value={cronJob.transcriptKey} mono />
               </div>
             </DetailSection>
@@ -835,6 +891,29 @@ export default function AlwaysOnV2({
   const renderHistoryDetail = () => {
     if (!historyDetailRunId) return null;
     const metadataEntries = historyDetail ? getVisibleRunMetadataEntries(historyDetail.metadata) : [];
+    const historySession = historyDetail?.session;
+    const historySessionId =
+      typeof historyDetail?.metadata?.sessionId === 'string'
+        ? historyDetail.metadata.sessionId
+        : historySession?.sessionId;
+    const originSessionId =
+      typeof historyDetail?.metadata?.originSessionId === 'string'
+        ? historyDetail.metadata.originSessionId
+        : historySession?.parentSessionId;
+    const historySessionTarget =
+      historyDetail &&
+      historySessionId &&
+      historySession?.parentSessionId &&
+      historySession.relativeTranscriptPath
+        ? {
+            kind: 'background' as const,
+            sessionId: historySessionId,
+            parentSessionId: historySession.parentSessionId,
+            relativeTranscriptPath: historySession.relativeTranscriptPath,
+            title: historyDetail.title,
+            summary: historyDetail.title,
+          }
+        : null;
 
     return (
       <div>
@@ -895,9 +974,24 @@ export default function AlwaysOnV2({
               <DetailSection title={t('history.sections.metadata', { defaultValue: 'Metadata' })}>
                 {metadataEntries.length > 0 ? (
                   <div className="space-y-4">
-                    {metadataEntries.map(([key, value]) => (
-                      <DetailMetaItem key={key} label={key} value={formatMetadataValue(value)} mono />
-                    ))}
+                    {metadataEntries.map(([key, value]) => {
+                      const formattedValue = formatMetadataValue(value);
+                      return (
+                        <DetailMetaItem
+                          key={key}
+                          label={key}
+                          value={formattedValue}
+                          onClick={
+                            key === 'sessionId' && historySessionTarget
+                              ? () => openSession(historySessionTarget)
+                              : key === 'originSessionId' && originSessionId
+                                ? () => openSession({ kind: 'origin', sessionId: originSessionId })
+                                : undefined
+                          }
+                          mono
+                        />
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-[13px] text-neutral-500 dark:text-neutral-400">

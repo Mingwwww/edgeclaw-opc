@@ -68,6 +68,7 @@ import os from 'os';
 import sessionManager from './sessionManager.js';
 import { applyCustomSessionNames } from './database/db.js';
 import { sendCronDaemonRequest } from './services/cron-daemon-owner.js';
+import { readEdgeClawConfigFile } from './services/edgeclawConfig.js';
 
 // Import TaskMaster detection functions
 async function detectTaskMasterFolder(projectPath) {
@@ -281,6 +282,43 @@ async function saveProjectConfig(config) {
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
 }
 
+function normalizeAlwaysOnProjectSettings(projectsConfig = {}) {
+  const normalized = {};
+  if (!projectsConfig || typeof projectsConfig !== 'object' || Array.isArray(projectsConfig)) {
+    return normalized;
+  }
+  for (const [projectRoot, settings] of Object.entries(projectsConfig)) {
+    if (typeof projectRoot !== 'string' || projectRoot.trim().length === 0) continue;
+    normalized[path.resolve(projectRoot)] = {
+      enabled: settings?.enabled === true
+    };
+  }
+  return normalized;
+}
+
+function readAlwaysOnProjectSettings() {
+  try {
+    return normalizeAlwaysOnProjectSettings(
+      readEdgeClawConfigFile().config?.alwaysOn?.discovery?.projects
+    );
+  } catch {
+    return {};
+  }
+}
+
+function getProjectAlwaysOnConfig(projectRoot, projectConfig = {}, alwaysOnProjectSettings = {}) {
+  const normalizedRoot = path.resolve(projectRoot);
+  const configured = alwaysOnProjectSettings[normalizedRoot];
+  const triggerEnabled = configured
+    ? configured.enabled === true
+    : projectConfig?.alwaysOn?.discovery?.triggerEnabled === true;
+  return {
+    discovery: {
+      triggerEnabled
+    }
+  };
+}
+
 // Generate better display name from path
 async function generateDisplayName(projectName, actualProjectDir = null) {
   // Use actual project directory if provided, otherwise decode from project name
@@ -433,6 +471,7 @@ async function getProjects(progressCallback = null) {
   const claudeDir = path.join(os.homedir(), '.claude', 'projects');
   await ensureDefaultGeneralProject();
   const config = await loadProjectConfig();
+  const alwaysOnProjectSettings = readAlwaysOnProjectSettings();
   const projects = [];
   const existingProjects = new Set();
   const codexSessionsIndexRef = { sessionsByProject: null };
@@ -486,6 +525,11 @@ async function getProjects(progressCallback = null) {
         fullPath: fullPath,
         isCustomName: !!customName,
         isDefault: config[entry.name]?.isDefault === true,
+        alwaysOn: getProjectAlwaysOnConfig(
+          actualProjectDir,
+          config[entry.name],
+          alwaysOnProjectSettings
+        ),
         sessions: [],
         geminiSessions: [],
         sessionMeta: {
@@ -611,6 +655,11 @@ async function getProjects(progressCallback = null) {
         isCustomName: !!projectConfig.displayName,
         isManuallyAdded: true,
         isDefault: projectConfig.isDefault === true,
+        alwaysOn: getProjectAlwaysOnConfig(
+          actualProjectDir,
+          projectConfig,
+          alwaysOnProjectSettings
+        ),
         sessions: [],
         geminiSessions: [],
         sessionMeta: {

@@ -412,7 +412,8 @@ export async function handleGetProjectAlwaysOnRunHistory(req, res) {
     const projectRoot = await extractProjectDirectory(projectName);
     const limit = Number.parseInt(req.query?.limit || '', 10);
     const history = await getAlwaysOnRunHistory(projectRoot, {
-      limit: Number.isFinite(limit) ? limit : undefined
+      limit: Number.isFinite(limit) ? limit : undefined,
+      projectName
     });
     return res.json(history);
   } catch (error) {

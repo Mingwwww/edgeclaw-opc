@@ -2,6 +2,7 @@ import type { Project } from '../types/app';
 
 export type AlwaysOnPresencePayload = {
   selectedProject: Project | null;
+  alwaysOnProjects: Project[];
   processingSessionIds: string[];
   lastUserMsgAt: string | null;
 };

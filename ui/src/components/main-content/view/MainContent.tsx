@@ -22,6 +22,7 @@ import { useEditorSidebar } from '../../code-editor/hooks/useEditorSidebar';
 import EditorSidebar from '../../code-editor/view/EditorSidebar';
 import type { CodeEditorDiffInfo } from '../../code-editor/types/types';
 import type {
+  AlwaysOnSessionTarget,
   CronJobOverview,
   ExecuteDiscoveryPlanResponse,
   Project,
@@ -38,6 +39,11 @@ import {
   clearAlwaysOnPresence,
   sendAlwaysOnPresence,
 } from '../../../utils/alwaysOnPresence';
+import {
+  createDiscoveryRequestDedupeStore,
+  shouldProcessDiscoveryRequest,
+} from '../../../utils/alwaysOnDiscoveryRequestDedupe';
+import { findAlwaysOnProjectByRoot } from '../../../utils/alwaysOnProjectMatching';
 import MainContentStateView from './subcomponents/MainContentStateView';
 import ErrorBoundary from './ErrorBoundary';
 import MemoryPanel from './memory/MemoryPanel';
@@ -59,6 +65,8 @@ type PendingDiscoveryExecution = {
   planId: string;
   executionToken: string;
 };
+
+type MainContentToast = { kind: 'error' | 'info'; text: string } | null;
 
 const AUTO_EXECUTION_POLL_INTERVAL_MS = 15000;
 const FILES_CHAT_DEFAULT_WIDTH = 460;
@@ -106,6 +114,7 @@ function buildAlwaysOnDiscoveryToolsSettings() {
 }
 
 function MainContent({
+  projects,
   selectedProject,
   selectedSession,
   activeTab,
@@ -139,7 +148,9 @@ function MainContent({
   const pendingDiscoveryExecutionsRef = useRef<Map<string, PendingDiscoveryExecution>>(new Map());
   const discoveryExecutionsBySessionRef = useRef<Map<string, PendingDiscoveryExecution>>(new Map());
   const autoLaunchInFlightRef = useRef<Set<string>>(new Set());
+  const processedDiscoveryRequestsRef = useRef(createDiscoveryRequestDedupeStore());
   const lastUserMsgAtRef = useRef<string | null>(null);
+  const [toast, setToast] = useState<MainContentToast>(null);
 
   const shouldShowTasksTab = Boolean(tasksEnabled && isTaskMasterInstalled);
 
@@ -194,18 +205,25 @@ function MainContent({
   }, [sendMessage]);
 
   const publishPresence = useCallback(() => {
-    if (!selectedProject) {
+    const alwaysOnProjects = projects.filter(project =>
+      project.alwaysOn?.discovery?.triggerEnabled === true
+    );
+    if (!selectedProject && alwaysOnProjects.length === 0) {
       return;
     }
     sendAlwaysOnPresence(sendMessage, {
       selectedProject,
+      alwaysOnProjects,
       processingSessionIds: Array.from(processingSessions),
       lastUserMsgAt: lastUserMsgAtRef.current,
     });
-  }, [processingSessions, selectedProject, sendMessage]);
+  }, [processingSessions, projects, selectedProject, sendMessage]);
 
   useEffect(() => {
-    if (!selectedProject || !ws) {
+    const hasAlwaysOnProject = projects.some(project =>
+      project.alwaysOn?.discovery?.triggerEnabled === true
+    );
+    if (!ws || (!selectedProject && !hasAlwaysOnProject)) {
       return undefined;
     }
 
@@ -215,7 +233,7 @@ function MainContent({
       window.clearInterval(timer);
       clearAlwaysOnPresence(sendMessage);
     };
-  }, [publishPresence, selectedProject, sendMessage, ws]);
+  }, [projects, publishPresence, selectedProject, sendMessage, ws]);
 
   const updateDiscoveryExecution = useCallback(async (
     projectName: string,
@@ -281,11 +299,112 @@ function MainContent({
     await launchQueuedDiscoveryPlanExecution(payload);
   }, [launchQueuedDiscoveryPlanExecution, selectedProject]);
 
-  const handleOpenCronSession = useCallback((job: CronJobOverview) => {
+  const flashToast = useCallback((toastValue: MainContentToast, ms = 2400) => {
+    setToast(toastValue);
+    if (toastValue) {
+      window.setTimeout(() => setToast(null), ms);
+    }
+  }, []);
+
+  const getProjectSessions = useCallback((project: Project): ProjectSession[] => [
+    ...(project.sessions ?? []),
+    ...(project.codexSessions ?? []),
+    ...(project.cursorSessions ?? []),
+    ...(project.geminiSessions ?? []),
+  ], []);
+
+  const findSessionInProject = useCallback((project: Project, sessionId: string) => (
+    getProjectSessions(project).find((session) => session.id === sessionId)
+  ), [getProjectSessions]);
+
+  const loadClaudeSession = useCallback(async (projectName: string, sessionId: string) => {
+    const response = await api.sessions(projectName, Number.MAX_SAFE_INTEGER, 0);
+    if (!response.ok) {
+      return null;
+    }
+    const payload = await readJsonPayload<{ sessions?: ProjectSession[] }>(response);
+    return payload?.sessions?.find((session) => session.id === sessionId) ?? null;
+  }, []);
+
+  const handleOpenAlwaysOnSession = useCallback(async (target: AlwaysOnSessionTarget) => {
     if (!selectedProject) {
       return;
     }
 
+    const missingMessage = i18n.t('alwaysOn:sessionMissing', {
+      defaultValue: 'This chat record no longer exists.',
+    });
+
+    if (target.kind === 'origin') {
+      const existingSession =
+        findSessionInProject(selectedProject, target.sessionId) ??
+        await loadClaudeSession(selectedProject.name, target.sessionId);
+
+      if (!existingSession) {
+        flashToast({ kind: 'error', text: missingMessage });
+        return;
+      }
+
+      const fallbackSession: ProjectSession = {
+        ...existingSession,
+        __provider: existingSession.__provider ?? 'claude',
+        __projectName: selectedProject.name,
+      };
+
+      setActiveTab('chat');
+      if (onSelectSession) {
+        onSelectSession(selectedProject, target.sessionId, fallbackSession);
+        return;
+      }
+      onNavigateToSession(target.sessionId);
+      return;
+    }
+
+    const existingSession =
+      findSessionInProject(selectedProject, target.sessionId) ??
+      await loadClaudeSession(selectedProject.name, target.sessionId);
+
+    if (!existingSession) {
+      flashToast({ kind: 'error', text: missingMessage });
+      return;
+    }
+
+    const fallbackSession: ProjectSession = {
+      ...existingSession,
+      id: target.sessionId,
+      title: target.title || existingSession.title || existingSession.summary || target.summary,
+      summary: target.summary || existingSession.summary || existingSession.title || target.title,
+      lastActivity: target.lastActivity || existingSession.lastActivity,
+      sessionKind: 'background_task',
+      parentSessionId: target.parentSessionId,
+      relativeTranscriptPath: target.relativeTranscriptPath,
+      transcriptKey: target.transcriptKey || existingSession.transcriptKey,
+      taskId: target.taskId || existingSession.taskId,
+      taskStatus: target.taskStatus || existingSession.taskStatus,
+      outputFile: target.outputFile || existingSession.outputFile,
+      isReadOnly: true,
+      __provider: 'claude',
+      __projectName: selectedProject.name,
+    };
+
+    setActiveTab('chat');
+    if (onSelectSession) {
+      onSelectSession(selectedProject, target.sessionId, fallbackSession);
+      return;
+    }
+    onNavigateToSession(target.sessionId);
+  }, [
+    findSessionInProject,
+    flashToast,
+    i18n,
+    loadClaudeSession,
+    onNavigateToSession,
+    onSelectSession,
+    selectedProject,
+    setActiveTab,
+  ]);
+
+  const handleOpenCronSession = useCallback((job: CronJobOverview) => {
     const latestRun = job.latestRun;
     if (
       !latestRun?.sessionId ||
@@ -295,33 +414,20 @@ function MainContent({
       return;
     }
 
-    const existingSession = selectedProject.sessions?.find(
-      session => session.id === latestRun.sessionId,
-    );
-    const fallbackSession: ProjectSession = existingSession ?? {
-      id: latestRun.sessionId,
+    void handleOpenAlwaysOnSession({
+      kind: 'background',
+      sessionId: latestRun.sessionId,
+      parentSessionId: latestRun.parentSessionId,
+      relativeTranscriptPath: latestRun.relativeTranscriptPath,
       title: latestRun.summary || job.prompt || job.cron,
       summary: latestRun.summary || job.prompt || job.cron,
       lastActivity: latestRun.lastActivity,
-      sessionKind: 'background_task',
-      parentSessionId: latestRun.parentSessionId,
-      relativeTranscriptPath: latestRun.relativeTranscriptPath,
       transcriptKey: latestRun.transcriptKey || job.transcriptKey,
       taskId: latestRun.taskId,
       taskStatus: job.status,
       outputFile: latestRun.outputFile,
-      isReadOnly: true,
-      __provider: 'claude',
-      __projectName: selectedProject.name,
-    };
-
-    setActiveTab('chat');
-    if (onSelectSession) {
-      onSelectSession(selectedProject, latestRun.sessionId, fallbackSession);
-      return;
-    }
-    onNavigateToSession(latestRun.sessionId);
-  }, [onNavigateToSession, onSelectSession, selectedProject, setActiveTab]);
+    });
+  }, [handleOpenAlwaysOnSession]);
 
   useEffect(() => {
     const message = latestMessage as {
@@ -457,18 +563,18 @@ function MainContent({
     };
   }, [pollAutoExecutablePlans, selectedProject]);
 
-  const handleStartDiscoverySession = useCallback(async () => {
-    if (!selectedProject) {
+  const handleStartDiscoverySession = useCallback(async (targetProject = selectedProject) => {
+    if (!targetProject) {
       return;
     }
 
-    onStartNewSession(selectedProject);
+    onStartNewSession(targetProject);
     let discoveryContext: ProjectDiscoveryContextResponse = {
       generatedAt: new Date().toISOString(),
       lookbackDays: 7,
       workspace: {
-        projectName: selectedProject.name,
-        projectRoot: selectedProject.fullPath || selectedProject.path || selectedProject.name,
+        projectName: targetProject.name,
+        projectRoot: targetProject.fullPath || targetProject.path || targetProject.name,
         signals: [],
       },
       memory: [],
@@ -478,7 +584,7 @@ function MainContent({
     };
 
     try {
-      const response = await api.projectDiscoveryContext(selectedProject.name);
+      const response = await api.projectDiscoveryContext(targetProject.name);
       const payload = await readJsonPayload<ProjectDiscoveryContextResponse & { error?: string }>(response);
       if (response.ok && payload) {
         discoveryContext = payload;
@@ -488,16 +594,16 @@ function MainContent({
     }
 
     const discoveryPrompt = buildAlwaysOnDiscoveryPrompt(
-      selectedProject,
+      targetProject,
       discoveryContext,
       discoveryPromptLanguage,
     );
     const pendingSessionId = startClaudeSessionCommand({
       sendMessage: trackedSendMessage,
-      selectedProject,
+      selectedProject: targetProject,
       command: discoveryPrompt,
       permissionMode: getStoredClaudePermissionMode(selectedSession),
-      sessionSummary: `Always-On discovery: ${selectedProject.displayName || selectedProject.name}`,
+      sessionSummary: `Always-On discovery: ${targetProject.displayName || targetProject.name}`,
       toolsSettings: buildAlwaysOnDiscoveryToolsSettings(),
     });
 
@@ -521,8 +627,20 @@ function MainContent({
       return;
     }
 
-    const selectedRoot = selectedProject?.fullPath || selectedProject?.path || '';
-    if (!selectedProject || !selectedRoot || selectedRoot !== message.projectRoot) {
+    if (!message.requestId) {
+      sendMessage({
+        type: 'always-on-auto-discovery-complete',
+        projectRoot: message.projectRoot,
+        status: 'failed',
+      });
+      return;
+    }
+    if (!shouldProcessDiscoveryRequest(processedDiscoveryRequestsRef.current, message.requestId)) {
+      return;
+    }
+
+    const targetProject = findAlwaysOnProjectByRoot(projects, message.projectRoot);
+    if (!targetProject) {
       sendMessage({
         type: 'always-on-auto-discovery-complete',
         projectRoot: message.projectRoot,
@@ -531,7 +649,7 @@ function MainContent({
       return;
     }
 
-    void handleStartDiscoverySession()
+    void handleStartDiscoverySession(targetProject)
       .then(() => {
         sendMessage({
           type: 'always-on-auto-discovery-complete',
@@ -546,7 +664,7 @@ function MainContent({
           status: 'failed',
         });
       });
-  }, [handleStartDiscoverySession, latestMessage, selectedProject, sendMessage]);
+  }, [handleStartDiscoverySession, latestMessage, projects, sendMessage]);
 
   if (isLoading) {
     return (
@@ -569,7 +687,7 @@ function MainContent({
   }
 
   return (
-    <div className="flex h-full flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+    <div className="relative flex h-full flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <SplitBody
           selectedProject={selectedProject}
@@ -601,6 +719,7 @@ function MainContent({
           handleStartDiscoverySession={handleStartDiscoverySession}
           handleExecuteDiscoveryPlan={handleExecuteDiscoveryPlan}
           handleOpenCronSession={handleOpenCronSession}
+          handleOpenAlwaysOnSession={handleOpenAlwaysOnSession}
           editorExpanded={editorExpanded}
         />
 
@@ -618,6 +737,17 @@ function MainContent({
           fillSpace={activeTab === 'files'}
         />
       </div>
+      {toast ? (
+        <div
+          className={cn(
+            'pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md px-3 py-1.5 text-[12px] shadow-lg',
+            toast.kind === 'error' && 'bg-red-600 text-white',
+            toast.kind === 'info' && 'bg-neutral-800 text-white',
+          )}
+        >
+          {toast.text}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -655,6 +785,7 @@ type SplitBodyProps = {
   handleStartDiscoverySession: any;
   handleExecuteDiscoveryPlan: any;
   handleOpenCronSession: (job: CronJobOverview) => void;
+  handleOpenAlwaysOnSession: (target: AlwaysOnSessionTarget) => void | Promise<void>;
   editorExpanded: boolean;
 };
 
@@ -689,6 +820,7 @@ function SplitBody(props: SplitBodyProps) {
     handleStartDiscoverySession,
     handleExecuteDiscoveryPlan,
     handleOpenCronSession,
+    handleOpenAlwaysOnSession,
     editorExpanded,
   } = props;
 
@@ -789,6 +921,7 @@ function SplitBody(props: SplitBodyProps) {
           onStartDiscoverySession={handleStartDiscoverySession}
           onExecuteDiscoveryPlan={handleExecuteDiscoveryPlan}
           onOpenCronSession={handleOpenCronSession}
+          onOpenSession={handleOpenAlwaysOnSession}
         />
       );
     }

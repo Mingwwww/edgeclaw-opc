@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { CronDaemonServer } from './server.js'
 import { ProjectRuntime } from './projectRuntime.js'
 
@@ -395,5 +395,48 @@ describe('CronDaemonServer client leases', () => {
       clientId: 'tui-summary',
     })
     await server.stop()
+  })
+
+  test('register_project schedules discovery for multiple project roots', async () => {
+    const previousConfigDir = process.env.CLAUDE_CONFIG_DIR
+    const configDir = await mkdtemp(
+      join(tmpdir(), 'cron-daemon-server-config-multi-'),
+    )
+    const firstProjectRoot = await mkdtemp(
+      join(tmpdir(), 'cron-daemon-server-project-first-'),
+    )
+    const secondProjectRoot = await mkdtemp(
+      join(tmpdir(), 'cron-daemon-server-project-second-'),
+    )
+    const server = new CronDaemonServer()
+    process.env.CLAUDE_CONFIG_DIR = configDir
+
+    try {
+      const firstResponse = await (server as any).handleRequest({
+        type: 'register_project',
+        projectRoot: firstProjectRoot,
+      })
+      const secondResponse = await (server as any).handleRequest({
+        type: 'register_project',
+        projectRoot: secondProjectRoot,
+      })
+
+      expect(firstResponse.ok).toBe(true)
+      expect(secondResponse.ok).toBe(true)
+      const timers = (server as any).discoveryScheduler.timers
+      expect(timers.has(resolve(firstProjectRoot))).toBe(true)
+      expect(timers.has(resolve(secondProjectRoot))).toBe(true)
+      expect(timers.size).toBe(2)
+    } finally {
+      await server.stop()
+      if (previousConfigDir === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+      }
+      await rm(configDir, { recursive: true, force: true })
+      await rm(firstProjectRoot, { recursive: true, force: true })
+      await rm(secondProjectRoot, { recursive: true, force: true })
+    }
   })
 })

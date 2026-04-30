@@ -9,12 +9,14 @@ import {
   clearProjectDirectoryCache,
   deleteSession,
   getProjectCronJobsOverview,
+  getProjects,
   getSessions
 } from './projects.js';
 
 const originalHome = process.env.HOME;
 const originalUserProfile = process.env.USERPROFILE;
 const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+const originalEdgeClawConfigPath = process.env.EDGECLAW_CONFIG_PATH;
 const tempDirs = [];
 
 async function createTempDir(prefix) {
@@ -189,6 +191,12 @@ afterEach(async () => {
   } else {
     process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
   }
+
+  if (originalEdgeClawConfigPath === undefined) {
+    delete process.env.EDGECLAW_CONFIG_PATH;
+  } else {
+    process.env.EDGECLAW_CONFIG_PATH = originalEdgeClawConfigPath;
+  }
 });
 
 test('getProjectCronJobsOverview returns an empty list when scheduled_tasks.json is missing', async () => {
@@ -202,6 +210,47 @@ test('getProjectCronJobsOverview returns an empty list when scheduled_tasks.json
   const overview = await getProjectCronJobsOverview(projectName);
 
   assert.deepEqual(overview, { jobs: [] });
+});
+
+test('getProjects includes per-project always-on discovery trigger setting', async () => {
+  const homeDir = await createTempHome();
+  const projectName = 'project-with-always-on';
+  const projectRoot = path.join(homeDir, 'workspace-always-on');
+  process.env.EDGECLAW_CONFIG_PATH = path.join(homeDir, '.edgeclaw', 'config.yaml');
+
+  await fs.mkdir(projectRoot, { recursive: true });
+  await writeProjectConfig(homeDir, projectName, projectRoot);
+  await fs.mkdir(path.dirname(process.env.EDGECLAW_CONFIG_PATH), { recursive: true });
+  await fs.writeFile(
+    process.env.EDGECLAW_CONFIG_PATH,
+    [
+      'models:',
+      '  providers:',
+      '    edgeclaw:',
+      '      type: openai-chat',
+      '      baseUrl: http://localhost',
+      '      apiKey: test-key',
+      '  entries:',
+      '    default:',
+      '      provider: edgeclaw',
+      '      name: test-model',
+      'agents:',
+      '  main:',
+      '    model: default',
+      'alwaysOn:',
+      '  discovery:',
+      '    projects:',
+      `      ${JSON.stringify(projectRoot)}:`,
+      '        enabled: true',
+      ''
+    ].join('\n'),
+    'utf8'
+  );
+
+  const projects = await getProjects();
+  const project = projects.find((candidate) => candidate.name === projectName);
+
+  assert.equal(project?.alwaysOn?.discovery?.triggerEnabled, true);
 });
 
 test('getProjectCronJobsOverview marks unmatched cron jobs as scheduled', async () => {

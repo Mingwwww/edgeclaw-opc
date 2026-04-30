@@ -13,6 +13,7 @@ import {
 import { appendAlwaysOnRunLog } from './always-on-run-logs.js';
 
 const tempDirs = [];
+const priorHome = process.env.HOME;
 
 async function createTempDir(prefix) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -21,11 +22,29 @@ async function createTempDir(prefix) {
 }
 
 afterEach(async () => {
+  if (priorHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = priorHome;
+  }
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+async function createProjectStore(projectName) {
+  const homeDir = await createTempDir('always-on-run-history-home-');
+  process.env.HOME = homeDir;
+  const projectDir = path.join(homeDir, '.claude', 'projects', projectName);
+  await fs.mkdir(projectDir, { recursive: true });
+  return { homeDir, projectDir };
+}
+
+async function writeJsonl(filePath, entries) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `${entries.map(entry => JSON.stringify(entry)).join('\n')}\n`, 'utf8');
+}
 
 test('run history appends events and folds them by run id', async () => {
   const projectRoot = await createTempDir('always-on-run-history-');
@@ -72,6 +91,136 @@ test('run history detail returns not found for unknown run id', async () => {
     () => getAlwaysOnRunHistoryDetail(projectRoot, 'missing-run'),
     /Run history entry not found/,
   );
+});
+
+test('run history derives background session id from transcript path', async () => {
+  const projectRoot = await createTempDir('always-on-run-history-session-id-');
+
+  await appendAlwaysOnRunEvent(projectRoot, {
+    runId: 'run-cron',
+    kind: 'cron',
+    sourceId: 'cron-alpha',
+    title: 'Cron Alpha',
+    status: 'completed',
+    timestamp: '2026-04-20T10:00:00.000Z',
+    parentSessionId: 'origin-session',
+    relativeTranscriptPath: 'origin-session/subagents/agent-cron-thread.jsonl',
+  });
+
+  const history = await getAlwaysOnRunHistory(projectRoot);
+  assert.equal(history.runs[0].session?.sessionId, 'background-origin-session-agent-cron-thread');
+
+  const detail = await getAlwaysOnRunHistoryDetail(projectRoot, 'run-cron');
+  assert.equal(detail.session?.sessionId, 'background-origin-session-agent-cron-thread');
+  assert.equal(detail.metadata.sessionId, 'background-origin-session-agent-cron-thread');
+});
+
+test('run history derives background session fields from metadata', async () => {
+  const projectRoot = await createTempDir('always-on-run-history-metadata-session-');
+
+  await appendAlwaysOnRunEvent(projectRoot, {
+    runId: 'run-cron-metadata',
+    kind: 'cron',
+    sourceId: 'cron-beta',
+    title: 'Cron Beta',
+    status: 'completed',
+    timestamp: '2026-04-20T10:00:00.000Z',
+    metadata: {
+      originSessionId: 'origin-session',
+      transcriptKey: 'cron-thread-raw',
+    },
+  });
+
+  const detail = await getAlwaysOnRunHistoryDetail(projectRoot, 'run-cron-metadata');
+  assert.equal(detail.session?.sessionId, 'background-origin-session-agent-cron-thread-raw');
+  assert.equal(detail.session?.parentSessionId, 'origin-session');
+  assert.equal(detail.session?.relativeTranscriptPath, 'origin-session/subagents/agent-cron-thread-raw.jsonl');
+  assert.equal(detail.metadata.sessionId, 'background-origin-session-agent-cron-thread-raw');
+});
+
+test('run history recovers legacy one-shot session from task notification output', async () => {
+  const projectRoot = await createTempDir('always-on-run-history-notification-');
+  const projectName = 'project-with-notification';
+  const parentSessionId = 'origin-session';
+  const transcriptFilename = 'agent-cron-shot-abc123.jsonl';
+  const { projectDir } = await createProjectStore(projectName);
+  const transcriptPath = path.join(projectDir, parentSessionId, 'subagents', transcriptFilename);
+
+  await writeJsonl(path.join(projectDir, `${parentSessionId}.jsonl`), [
+    {
+      type: 'user',
+      sessionId: parentSessionId,
+      timestamp: '2026-04-20T10:02:00.000Z',
+      message: {
+        role: 'user',
+        content: `<task-notification>
+<task-id>cron-run-runtime</task-id>
+<output-file>${transcriptPath}</output-file>
+<status>completed</status>
+<summary>Cron task "One-shot cron cron-legacy" completed</summary>
+</task-notification>`,
+      },
+    },
+  ]);
+  await writeJsonl(transcriptPath, [
+    {
+      type: 'user',
+      isSidechain: true,
+      timestamp: '2026-04-20T10:00:00.000Z',
+      message: { role: 'user', content: 'Run once' },
+    },
+  ]);
+  await appendAlwaysOnRunEvent(projectRoot, {
+    runId: 'run-legacy',
+    kind: 'cron',
+    sourceId: 'cron-legacy',
+    title: 'Legacy one-shot',
+    status: 'completed',
+    timestamp: '2026-04-20T10:02:00.000Z',
+    startedAt: '2026-04-20T10:00:00.000Z',
+    finishedAt: '2026-04-20T10:02:00.000Z',
+    parentSessionId,
+    metadata: { taskId: 'cron-legacy', originSessionId: parentSessionId },
+  });
+
+  const detail = await getAlwaysOnRunHistoryDetail(projectRoot, 'run-legacy', { projectName });
+  assert.equal(detail.session?.sessionId, 'background-origin-session-agent-cron-shot-abc123');
+  assert.equal(detail.session?.relativeTranscriptPath, `${parentSessionId}/subagents/${transcriptFilename}`);
+  assert.equal(detail.metadata.sessionId, 'background-origin-session-agent-cron-shot-abc123');
+});
+
+test('run history recovers legacy one-shot session by scanning subagents timestamps', async () => {
+  const projectRoot = await createTempDir('always-on-run-history-scan-');
+  const projectName = 'project-with-scan';
+  const parentSessionId = 'origin-session';
+  const transcriptFilename = 'agent-cron-shot-nearby.jsonl';
+  const { projectDir } = await createProjectStore(projectName);
+  const transcriptPath = path.join(projectDir, parentSessionId, 'subagents', transcriptFilename);
+
+  await writeJsonl(transcriptPath, [
+    {
+      type: 'user',
+      isSidechain: true,
+      timestamp: '2026-04-20T10:00:30.000Z',
+      message: { role: 'user', content: 'Nearby cron' },
+    },
+  ]);
+  await appendAlwaysOnRunEvent(projectRoot, {
+    runId: 'run-scan',
+    kind: 'cron',
+    sourceId: 'cron-scan',
+    title: 'Scan one-shot',
+    status: 'completed',
+    timestamp: '2026-04-20T10:01:00.000Z',
+    startedAt: '2026-04-20T10:00:00.000Z',
+    finishedAt: '2026-04-20T10:01:00.000Z',
+    parentSessionId,
+    metadata: { taskId: 'cron-scan', originSessionId: parentSessionId },
+  });
+
+  const detail = await getAlwaysOnRunHistoryDetail(projectRoot, 'run-scan', { projectName });
+  assert.equal(detail.session?.sessionId, 'background-origin-session-agent-cron-shot-nearby');
+  assert.equal(detail.metadata.relativeTranscriptPath, `${parentSessionId}/subagents/${transcriptFilename}`);
 });
 
 test('run history detail prefers dedicated log file over history output', async () => {

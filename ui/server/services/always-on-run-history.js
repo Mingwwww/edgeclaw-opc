@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 
 import { getAlwaysOnRoot } from './always-on-paths.js';
 import { getAlwaysOnRunLog } from './always-on-run-logs.js';
@@ -7,8 +8,11 @@ import { getAlwaysOnRunLog } from './always-on-run-logs.js';
 const RUN_HISTORY_FILE_NAME = 'run-history.jsonl';
 const RUN_HISTORY_MAX_ITEMS = 500;
 const OUTPUT_LOG_MAX_CHARS = 60_000;
+const RECOVERY_MATCH_WINDOW_MS = 5 * 60 * 1000;
 const VALID_KINDS = new Set(['plan', 'cron']);
 const VALID_STATUSES = new Set(['queued', 'running', 'completed', 'failed', 'unknown']);
+const TASK_NOTIFICATION_REGEX = /<task-notification>\s*<task-id>([\s\S]*?)<\/task-id>\s*<output-file>([\s\S]*?)<\/output-file>\s*<status>([\s\S]*?)<\/status>\s*<summary>([\s\S]*?)<\/summary>\s*<\/task-notification>/i;
+const CRON_TRANSCRIPT_FILENAME_REGEX = /^agent-cron[^/]*\.jsonl$/i;
 
 function normalizeString(value, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
@@ -28,6 +32,273 @@ function sanitizeMetadata(value) {
     return {};
   }
   return value;
+}
+
+function normalizeTranscriptFilename(value) {
+  const rawName = path.basename(normalizeString(value));
+  if (!rawName) {
+    return '';
+  }
+
+  const withoutJsonl = rawName.replace(/\.jsonl$/i, '');
+  const withAgentPrefix = withoutJsonl.startsWith('agent-')
+    ? withoutJsonl
+    : `agent-${withoutJsonl}`;
+  return `${withAgentPrefix}.jsonl`;
+}
+
+function getRecordParentSessionId(record) {
+  return record.parentSessionId || normalizeString(record.metadata?.originSessionId) || undefined;
+}
+
+function getRecordRelativeTranscriptPath(record) {
+  const parentSessionId = getRecordParentSessionId(record);
+  const relativeTranscriptPath = normalizeString(record.relativeTranscriptPath);
+  const transcriptKey = record.transcriptKey || normalizeString(record.metadata?.transcriptKey);
+
+  if (!parentSessionId) {
+    return relativeTranscriptPath || undefined;
+  }
+
+  if (relativeTranscriptPath) {
+    const dirname = path.dirname(relativeTranscriptPath);
+    const normalizedFilename = normalizeTranscriptFilename(path.basename(relativeTranscriptPath));
+    if (normalizedFilename) {
+      return path.join(dirname === '.' ? parentSessionId : dirname, normalizedFilename);
+    }
+    return relativeTranscriptPath;
+  }
+
+  const transcriptFilename = normalizeTranscriptFilename(transcriptKey);
+  if (!transcriptFilename) {
+    return undefined;
+  }
+
+  return path.join(parentSessionId, 'subagents', transcriptFilename);
+}
+
+function createBackgroundSessionId(parentSessionId, relativeTranscriptPath) {
+  const safeParent = normalizeString(parentSessionId).replace(/[^a-zA-Z0-9._-]/g, '-');
+  const transcriptName = path.basename(normalizeString(relativeTranscriptPath));
+  const safeTranscript = transcriptName
+    .replace(/\.jsonl$/i, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '-');
+
+  if (!safeParent || !safeTranscript) {
+    return undefined;
+  }
+
+  return `background-${safeParent}-${safeTranscript}`;
+}
+
+function getRecordSessionId(record) {
+  return record.sessionId || createBackgroundSessionId(
+    getRecordParentSessionId(record),
+    getRecordRelativeTranscriptPath(record),
+  );
+}
+
+function getProjectStoreDir(projectName) {
+  return projectName ? path.join(os.homedir(), '.claude', 'projects', projectName) : '';
+}
+
+function getTaskNotificationEntryContent(entry) {
+  if (typeof entry?.content === 'string' && entry.content.trim()) {
+    return entry.content;
+  }
+  return extractContentText(entry?.message?.content);
+}
+
+function parseTaskNotificationContent(content) {
+  if (typeof content !== 'string' || !content.trim()) {
+    return null;
+  }
+  const match = content.match(TASK_NOTIFICATION_REGEX);
+  if (!match) {
+    return null;
+  }
+  const [, taskId = '', outputFile = '', status = '', summary = ''] = match;
+  return {
+    taskId: taskId.trim(),
+    outputFile: outputFile.trim(),
+    status: status.trim(),
+    summary: summary.trim(),
+  };
+}
+
+function isRunTaskNotification(record, notification) {
+  const sourceId = normalizeString(record.sourceId);
+  const taskId = normalizeString(record.metadata?.taskId, sourceId);
+  const haystack = [
+    notification.taskId,
+    notification.outputFile,
+    notification.summary,
+  ].join('\n');
+  return Boolean((sourceId && haystack.includes(sourceId)) || (taskId && haystack.includes(taskId)));
+}
+
+function getTranscriptInfoFromPath(projectDir, transcriptPath) {
+  const relativeTranscriptPath = path.relative(projectDir, transcriptPath).split(path.sep).join('/');
+  const parts = relativeTranscriptPath.split('/');
+  if (parts.length < 3 || parts[1] !== 'subagents') {
+    return null;
+  }
+  const parentSessionId = parts[0];
+  const transcriptFilename = parts.at(-1) || '';
+  if (!parentSessionId || !CRON_TRANSCRIPT_FILENAME_REGEX.test(transcriptFilename)) {
+    return null;
+  }
+  return {
+    parentSessionId,
+    relativeTranscriptPath,
+    transcriptKey: transcriptFilename,
+    sessionId: createBackgroundSessionId(parentSessionId, relativeTranscriptPath),
+  };
+}
+
+function isWithinDirectory(parentDir, candidatePath) {
+  const relative = path.relative(parentDir, candidatePath);
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+async function readJsonlEntries(filePath) {
+  let raw = '';
+  try {
+    raw = await fs.readFile(filePath, 'utf8');
+  } catch {
+    return [];
+  }
+  return raw
+    .split(/\r?\n/)
+    .filter(line => line.trim())
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+async function recoverFromTaskNotification(record, projectName) {
+  const parentSessionId = getRecordParentSessionId(record);
+  const projectDir = getProjectStoreDir(projectName);
+  if (!parentSessionId || !projectDir) {
+    return null;
+  }
+
+  const parentTranscriptPath = path.join(projectDir, `${parentSessionId}.jsonl`);
+  const entries = await readJsonlEntries(parentTranscriptPath);
+  for (const entry of entries) {
+    if (entry?.sessionId !== parentSessionId) {
+      continue;
+    }
+    const notification = parseTaskNotificationContent(getTaskNotificationEntryContent(entry));
+    if (!notification || !isRunTaskNotification(record, notification) || !notification.outputFile) {
+      continue;
+    }
+
+    const outputPath = path.resolve(notification.outputFile);
+    let realOutputPath = outputPath;
+    try {
+      realOutputPath = await fs.realpath(outputPath);
+    } catch {
+      // Symlink targets may already be cleaned up; fall back to the requested path.
+    }
+    const transcriptPath = realOutputPath.endsWith('.output')
+      ? realOutputPath.replace(/\.output$/i, '.jsonl')
+      : realOutputPath;
+    const realTranscriptPath = await fs.realpath(transcriptPath).catch(() => transcriptPath);
+    if (!isWithinDirectory(projectDir, realTranscriptPath)) {
+      continue;
+    }
+    const info = getTranscriptInfoFromPath(projectDir, realTranscriptPath);
+    if (info) {
+      return {
+        ...info,
+        taskId: notification.taskId,
+        taskStatus: notification.status,
+        outputFile: notification.outputFile,
+      };
+    }
+  }
+
+  return null;
+}
+
+function isTimestampNearRun(record, timestamps) {
+  const runStart = Date.parse(record.startedAt || '');
+  const runFinish = Date.parse(record.finishedAt || record.updatedAt || '');
+  const anchors = [runStart, runFinish].filter(Number.isFinite);
+  if (anchors.length === 0) {
+    return false;
+  }
+  return timestamps.some(timestamp => anchors.some(anchor => Math.abs(timestamp - anchor) <= RECOVERY_MATCH_WINDOW_MS));
+}
+
+async function recoverFromSubagents(record, projectName) {
+  const parentSessionId = getRecordParentSessionId(record);
+  const projectDir = getProjectStoreDir(projectName);
+  if (!parentSessionId || !projectDir) {
+    return null;
+  }
+
+  const subagentsDir = path.join(projectDir, parentSessionId, 'subagents');
+  let entries = [];
+  try {
+    entries = await fs.readdir(subagentsDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  const candidates = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !CRON_TRANSCRIPT_FILENAME_REGEX.test(entry.name)) {
+      continue;
+    }
+    const transcriptPath = path.join(subagentsDir, entry.name);
+    const transcriptEntries = await readJsonlEntries(transcriptPath);
+    const timestamps = transcriptEntries
+      .map(item => Date.parse(item?.timestamp || ''))
+      .filter(Number.isFinite);
+    if (!isTimestampNearRun(record, timestamps)) {
+      continue;
+    }
+    const info = getTranscriptInfoFromPath(projectDir, transcriptPath);
+    if (info) {
+      candidates.push({
+        ...info,
+        distance: Math.min(
+          ...timestamps.map(timestamp => Math.abs(timestamp - (Date.parse(record.startedAt || '') || timestamp))),
+        ),
+      });
+    }
+  }
+
+  candidates.sort((left, right) => left.distance - right.distance);
+  return candidates[0] || null;
+}
+
+async function recoverRecordSessionInfo(record, projectName) {
+  if (getRecordSessionId(record) && getRecordRelativeTranscriptPath(record)) {
+    return {
+      sessionId: getRecordSessionId(record),
+      parentSessionId: getRecordParentSessionId(record),
+      relativeTranscriptPath: getRecordRelativeTranscriptPath(record),
+      transcriptKey: record.transcriptKey || normalizeString(record.metadata?.transcriptKey) || undefined,
+    };
+  }
+  return (
+    await recoverFromTaskNotification(record, projectName) ||
+    await recoverFromSubagents(record, projectName) ||
+    {
+      sessionId: undefined,
+      parentSessionId: getRecordParentSessionId(record),
+      relativeTranscriptPath: getRecordRelativeTranscriptPath(record),
+      transcriptKey: record.transcriptKey || normalizeString(record.metadata?.transcriptKey) || undefined,
+    }
+  );
 }
 
 function normalizeRunEvent(event) {
@@ -113,7 +384,11 @@ function createRecordFromEvent(event) {
   }, event);
 }
 
-function toHistoryEntry(record) {
+function toHistoryEntry(record, sessionInfo = null) {
+  const sessionId = sessionInfo?.sessionId || getRecordSessionId(record);
+  const parentSessionId = sessionInfo?.parentSessionId || getRecordParentSessionId(record);
+  const relativeTranscriptPath = sessionInfo?.relativeTranscriptPath || getRecordRelativeTranscriptPath(record);
+
   return {
     runId: record.runId,
     title: record.title,
@@ -122,9 +397,9 @@ function toHistoryEntry(record) {
     startedAt: record.startedAt,
     sourceId: record.sourceId,
     session: {
-      sessionId: record.sessionId,
-      parentSessionId: record.parentSessionId,
-      relativeTranscriptPath: record.relativeTranscriptPath,
+      sessionId,
+      parentSessionId,
+      relativeTranscriptPath,
     },
   };
 }
@@ -161,19 +436,23 @@ function formatMessageForLog(entry) {
   return `${prefix}\n${content}`;
 }
 
-async function buildSessionOutputLog(projectName, record) {
-  if (!projectName || !record.sessionId) {
+async function buildSessionOutputLog(projectName, record, sessionInfo = null) {
+  const sessionId = sessionInfo?.sessionId || getRecordSessionId(record);
+  const parentSessionId = sessionInfo?.parentSessionId || getRecordParentSessionId(record);
+  const relativeTranscriptPath = sessionInfo?.relativeTranscriptPath || getRecordRelativeTranscriptPath(record);
+
+  if (!projectName || !sessionId) {
     return '';
   }
 
   try {
     const { getSessionMessages } = await import('../projects.js');
-    const result = await getSessionMessages(projectName, record.sessionId, {
+    const result = await getSessionMessages(projectName, sessionId, {
       limit: null,
       offset: 0,
-      sessionKind: record.parentSessionId && record.relativeTranscriptPath ? 'background_task' : null,
-      parentSessionId: record.parentSessionId,
-      relativeTranscriptPath: record.relativeTranscriptPath,
+      sessionKind: parentSessionId && relativeTranscriptPath ? 'background_task' : null,
+      parentSessionId,
+      relativeTranscriptPath,
     });
     const messages = Array.isArray(result?.messages) ? result.messages : [];
     return messages
@@ -239,13 +518,20 @@ export async function appendAlwaysOnRunEvent(projectRoot, event) {
   return normalized;
 }
 
-export async function getAlwaysOnRunHistory(projectRoot, { limit = RUN_HISTORY_MAX_ITEMS } = {}) {
+export async function getAlwaysOnRunHistory(projectRoot, { limit = RUN_HISTORY_MAX_ITEMS, projectName = '' } = {}) {
   const records = (await readRunHistoryRecords(projectRoot)).filter(
     (record) => record.status !== 'unknown',
   );
   const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : RUN_HISTORY_MAX_ITEMS;
+  const slicedRecords = records.slice(0, safeLimit);
+  const entries = await Promise.all(
+    slicedRecords.map(async (record) => toHistoryEntry(
+      record,
+      projectName ? await recoverRecordSessionInfo(record, projectName) : null,
+    )),
+  );
   return {
-    runs: records.slice(0, safeLimit).map(toHistoryEntry),
+    runs: entries,
   };
 }
 
@@ -258,12 +544,16 @@ export async function getAlwaysOnRunHistoryDetail(projectRoot, runId, { projectN
     throw error;
   }
 
-  const sessionOutput = await buildSessionOutputLog(projectName, record);
+  const sessionInfo = await recoverRecordSessionInfo(record, projectName);
+  const sessionOutput = await buildSessionOutputLog(projectName, record, sessionInfo);
   const fileLog = await getAlwaysOnRunLog(projectRoot, runId);
   const outputLog = fileLog.content || sessionOutput || record.outputLog || record.error || '';
   const logSource = fileLog.content ? 'log-file' : (sessionOutput ? 'session' : 'history');
+  const sessionId = sessionInfo?.sessionId || getRecordSessionId(record);
+  const parentSessionId = sessionInfo?.parentSessionId || getRecordParentSessionId(record);
+  const relativeTranscriptPath = sessionInfo?.relativeTranscriptPath || getRecordRelativeTranscriptPath(record);
   return {
-    ...toHistoryEntry(record),
+    ...toHistoryEntry(record, sessionInfo),
     outputLog,
     metadata: {
       ...record.metadata,
@@ -272,10 +562,14 @@ export async function getAlwaysOnRunHistoryDetail(projectRoot, runId, { projectN
       status: record.status,
       startedAt: record.startedAt,
       finishedAt: record.finishedAt,
-      sessionId: record.sessionId,
-      parentSessionId: record.parentSessionId,
-      relativeTranscriptPath: record.relativeTranscriptPath,
-      transcriptKey: record.transcriptKey,
+      sessionId: sessionId ?? null,
+      parentSessionId,
+      relativeTranscriptPath,
+      transcriptKey: sessionInfo?.transcriptKey || record.transcriptKey || normalizeString(record.metadata?.transcriptKey) || undefined,
+      taskId: record.metadata?.taskId,
+      runtimeTaskId: sessionInfo?.taskId,
+      taskStatus: sessionInfo?.taskStatus,
+      outputFile: sessionInfo?.outputFile,
       logSource,
       logUpdatedAt: fileLog.updatedAt,
       logSize: fileLog.size,

@@ -1,6 +1,5 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { extractProjectDirectory } from './projects.js';
 import { sendCronDaemonRequest } from './services/cron-daemon-owner.js';
 import { getAlwaysOnHeartbeatPath } from './services/always-on-paths.js';
 
@@ -13,7 +12,18 @@ async function resolveProjectRoot(project) {
   if (direct) return path.resolve(direct);
   const projectName = normalizeString(project?.projectName) || normalizeString(project?.name);
   if (!projectName) return '';
+  const { extractProjectDirectory } = await import('./projects.js');
   return path.resolve(await extractProjectDirectory(projectName));
+}
+
+async function resolveProjectRoots(projects) {
+  if (!Array.isArray(projects)) return [];
+  const roots = [];
+  for (const project of projects) {
+    const root = await resolveProjectRoot(project);
+    if (root) roots.push(root);
+  }
+  return [...new Set(roots)];
 }
 
 async function registerProject(projectRoot) {
@@ -24,9 +34,13 @@ async function registerProject(projectRoot) {
   }
 }
 
-export function createAlwaysOnHeartbeatManager({ getActiveClaudeSessions = () => [] } = {}) {
+export function createAlwaysOnHeartbeatManager({
+  getActiveClaudeSessions = () => [],
+  registerProjectFn = registerProject
+} = {}) {
   const wsFiles = new WeakMap();
   const wsIds = new WeakMap();
+  const wsProjectRoots = new WeakMap();
 
   function getWsId(ws) {
     let id = wsIds.get(ws);
@@ -59,30 +73,28 @@ export function createAlwaysOnHeartbeatManager({ getActiveClaudeSessions = () =>
     const files = wsFiles.get(ws) || new Set();
     files.add(filePath);
     wsFiles.set(ws, files);
-    await registerProject(projectRoot);
+    await registerProjectFn(projectRoot);
   }
 
   async function handlePresence(ws, payload = {}) {
     const roots = new Map();
     const selectedRoot = await resolveProjectRoot(payload.selectedProject);
-    if (selectedRoot) {
-      roots.set(selectedRoot, {
+    const alwaysOnRoots = await resolveProjectRoots(payload.alwaysOnProjects);
+
+    for (const projectRoot of alwaysOnRoots) {
+      roots.set(projectRoot, {
         agentBusy: false,
         processingSessionIds: [],
-        lastUserMsgAt: payload.lastUserMsgAt,
+        lastUserMsgAt: selectedRoot === projectRoot ? payload.lastUserMsgAt : null,
       });
     }
-
     const activeSessions = getActiveClaudeSessions();
     for (const session of activeSessions) {
       const cwd = normalizeString(session?.cwd);
       if (!cwd) continue;
       const projectRoot = path.resolve(cwd);
-      const existing = roots.get(projectRoot) || {
-        agentBusy: false,
-        processingSessionIds: [],
-        lastUserMsgAt: payload.lastUserMsgAt,
-      };
+      const existing = roots.get(projectRoot);
+      if (!existing) continue;
       existing.agentBusy = true;
       existing.processingSessionIds.push(session.sessionId);
       roots.set(projectRoot, existing);
@@ -91,17 +103,26 @@ export function createAlwaysOnHeartbeatManager({ getActiveClaudeSessions = () =>
     for (const [projectRoot, beatPayload] of roots) {
       await writeBeat(ws, projectRoot, beatPayload);
     }
+    wsProjectRoots.set(ws, new Set(roots.keys()));
+    return [...roots.keys()];
   }
 
   async function clearPresence(ws) {
     const files = wsFiles.get(ws);
-    if (!files) return;
+    if (!files) {
+      wsProjectRoots.delete(ws);
+      return;
+    }
     await Promise.all([...files].map((filePath) => fs.rm(filePath, { force: true }).catch(() => {})));
     wsFiles.delete(ws);
+    wsProjectRoots.delete(ws);
   }
 
   return {
     getWriterId: getWsId,
+    getProjectRoots(ws) {
+      return [...(wsProjectRoots.get(ws) || [])];
+    },
     handlePresence,
     clearPresence,
   };

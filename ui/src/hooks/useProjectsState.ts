@@ -44,6 +44,7 @@ const projectsHaveChanges = (
       nextProject.name !== prevProject.name ||
       nextProject.displayName !== prevProject.displayName ||
       nextProject.fullPath !== prevProject.fullPath ||
+      serialize(nextProject.alwaysOn) !== serialize(prevProject.alwaysOn) ||
       serialize(nextProject.sessionMeta) !== serialize(prevProject.sessionMeta) ||
       serialize(nextProject.sessions) !== serialize(prevProject.sessions) ||
       serialize(nextProject.taskmaster) !== serialize(prevProject.taskmaster);

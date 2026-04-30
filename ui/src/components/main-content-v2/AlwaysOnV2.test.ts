@@ -103,7 +103,10 @@ describe('AlwaysOnV2 active item filtering', () => {
     const entries = getVisibleRunMetadataEntries({
       source: 'manual',
       sourceId: 'plan-alpha',
+      parentSessionId: 'origin-session',
+      originSessionId: 'origin-session',
       logUpdatedAt: '2026-04-29T14:31:14.104Z',
+      sessionId: 'background-origin-session-agent-cron-thread',
       planFilePath: '.claude/always-on/plans/plan-alpha.md',
       logSize: 800,
       logSource: 'log-file',
@@ -111,6 +114,8 @@ describe('AlwaysOnV2 active item filtering', () => {
     });
 
     expect(entries).toEqual([
+      ['originSessionId', 'origin-session'],
+      ['sessionId', 'background-origin-session-agent-cron-thread'],
       ['planFilePath', '.claude/always-on/plans/plan-alpha.md'],
       ['logSource', 'log-file'],
     ]);

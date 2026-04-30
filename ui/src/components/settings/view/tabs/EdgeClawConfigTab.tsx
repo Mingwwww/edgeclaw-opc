@@ -14,11 +14,17 @@ import {
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { Button } from '../../../../shared/view/ui';
 import { useEdgeClawConfig, type ConfigReload } from '../../../../hooks/useEdgeClawConfig';
+import {
+  getAlwaysOnProjectRoot,
+  isAlwaysOnProjectEnabled,
+  setAlwaysOnProjectEnabled,
+} from '../../../../utils/alwaysOnConfigPatch';
 import SettingsCard from '../SettingsCard';
 import SettingsRow from '../SettingsRow';
 import SettingsSection from '../SettingsSection';
 import SettingsToggle from '../SettingsToggle';
 import { cn } from '../../../../lib/utils';
+import type { SettingsProject } from '../../types/types';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -55,17 +61,32 @@ type EdgeClawConfig = {
     main?: { model?: string; params?: Record<string, unknown> };
     subagents?: { default?: string; params?: Record<string, unknown> };
   };
+  alwaysOn?: {
+    discovery?: {
+      trigger?: {
+        enabled?: boolean;
+        tickIntervalMinutes?: number;
+        cooldownMinutes?: number;
+        dailyBudget?: number;
+        heartbeatStaleSeconds?: number;
+        recentUserMsgMinutes?: number;
+        preferClient?: 'webui' | 'tui';
+      };
+      projects?: Record<string, { enabled?: boolean }>;
+    };
+  };
   memory?: { enabled?: boolean; model?: string; params?: Record<string, unknown> };
   router?: { enabled?: boolean } & Record<string, unknown>;
   gateway?: { enabled?: boolean; home?: string } & Record<string, unknown>;
 };
 
-type SectionId = 'runtime' | 'models' | 'agents' | 'memory' | 'router' | 'gateway';
+type SectionId = 'runtime' | 'models' | 'agents' | 'alwaysOn' | 'memory' | 'router' | 'gateway';
 
 const SECTIONS: Array<{ id: SectionId; label: string; description: string }> = [
   { id: 'runtime', label: 'Runtime',  description: 'Ports, host, timeouts, database location' },
   { id: 'models',  label: 'Models',   description: 'Providers and named model entries' },
   { id: 'agents',  label: 'Agents',   description: 'Main agent + subagents model bindings' },
+  { id: 'alwaysOn', label: 'Always-On', description: 'Automatic discovery and workspace opt-in' },
   { id: 'memory',  label: 'Memory',   description: 'EdgeClaw memory service' },
   { id: 'router',  label: 'Router',   description: 'Claude Code Router (CCR)' },
   { id: 'gateway', label: 'Gateway',  description: 'Messaging gateway home + channels' },
@@ -534,6 +555,91 @@ function AgentsSection({ config, onChange }: { config: EdgeClawConfig; onChange:
   );
 }
 
+function AlwaysOnSection({
+  config,
+  projects,
+  onChange,
+}: {
+  config: EdgeClawConfig;
+  projects: SettingsProject[];
+  onChange: (next: EdgeClawConfig) => void;
+}) {
+  const trigger = config.alwaysOn?.discovery?.trigger ?? {};
+  const projectRows = projects
+    .map(project => ({ project, root: getAlwaysOnProjectRoot(project) }))
+    .filter(item => item.root.length > 0);
+
+  return (
+    <SettingsSection
+      title="Always-On"
+      description="Configure automatic discovery globally and opt individual workspaces in."
+    >
+      <div className="space-y-4">
+        <SettingsCard divided>
+          <SettingsRow
+            label="Auto discovery"
+            description="When enabled, Always-On can periodically inspect opted-in workspaces and propose follow-up plans."
+          >
+            <SettingsToggle
+              checked={trigger.enabled === true}
+              ariaLabel="Toggle automatic discovery"
+              onChange={(value) => onChange(patch(config, ['alwaysOn', 'discovery', 'trigger', 'enabled'], value))}
+            />
+          </SettingsRow>
+          <FormRow label="Tick interval (minutes)" description="How often the daemon checks opted-in workspaces.">
+            <NumberInput
+              value={trigger.tickIntervalMinutes}
+              placeholder="5"
+              onChange={(value) => onChange(patch(config, ['alwaysOn', 'discovery', 'trigger', 'tickIntervalMinutes'], value))}
+            />
+          </FormRow>
+          <FormRow label="Cooldown (minutes)" description="Minimum time between discovery runs per workspace.">
+            <NumberInput
+              value={trigger.cooldownMinutes}
+              placeholder="60"
+              onChange={(value) => onChange(patch(config, ['alwaysOn', 'discovery', 'trigger', 'cooldownMinutes'], value))}
+            />
+          </FormRow>
+          <FormRow label="Daily budget" description="Maximum automatic discovery runs per workspace per day.">
+            <NumberInput
+              value={trigger.dailyBudget}
+              placeholder="4"
+              onChange={(value) => onChange(patch(config, ['alwaysOn', 'discovery', 'trigger', 'dailyBudget'], value))}
+            />
+          </FormRow>
+        </SettingsCard>
+
+        <SettingsSection
+          title="Workspace opt-in"
+          description="Only enabled workspaces receive Always-On heartbeats and scheduled discovery checks."
+        >
+          <SettingsCard divided>
+            {projectRows.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-muted-foreground">
+                No recognized projects yet. Add or open a workspace first.
+              </div>
+            ) : (
+              projectRows.map(({ project, root }) => (
+                <SettingsRow
+                  key={root}
+                  label={project.displayName || project.name}
+                  description={root}
+                >
+                  <SettingsToggle
+                    checked={isAlwaysOnProjectEnabled(config, project)}
+                    ariaLabel={`Toggle Always-On discovery for ${project.displayName || project.name}`}
+                    onChange={(enabled) => onChange(setAlwaysOnProjectEnabled(config, project, enabled))}
+                  />
+                </SettingsRow>
+              ))
+            )}
+          </SettingsCard>
+        </SettingsSection>
+      </div>
+    </SettingsSection>
+  );
+}
+
 function MemorySection({ config, onChange }: { config: EdgeClawConfig; onChange: (next: EdgeClawConfig) => void }) {
   const m = config.memory ?? {};
   const entryIds = Object.keys(config.models?.entries ?? {});
@@ -680,7 +786,7 @@ function RawYamlView({
 
 type ViewMode = 'form' | 'raw';
 
-export default function EdgeClawConfigTab() {
+export default function EdgeClawConfigTab({ projects = [] }: { projects?: SettingsProject[] }) {
   const {
     path,
     raw,
@@ -855,6 +961,7 @@ export default function EdgeClawConfigTab() {
                 {activeSection === 'runtime' && <RuntimeSection config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'models'  && <ModelsSection  config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'agents'  && <AgentsSection  config={parsedConfig} onChange={onFormChange} />}
+                {activeSection === 'alwaysOn' && <AlwaysOnSection config={parsedConfig} projects={projects} onChange={onFormChange} />}
                 {activeSection === 'memory'  && <MemorySection  config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'router'  && <RouterSection  config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'gateway' && <GatewaySection config={parsedConfig} onChange={onFormChange} />}

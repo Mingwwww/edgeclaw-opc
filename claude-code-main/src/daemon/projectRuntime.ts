@@ -120,9 +120,12 @@ export async function appendCronRunHistoryEvent(
   options: { finishedAt?: string; error?: string } = {},
 ): Promise<void> {
   const alwaysOnDir = join(resolve(projectRoot), '.claude', 'always-on')
+  const transcriptFilename = task.transcriptKey
+    ? `agent-${task.transcriptKey.replace(/^agent-/, '').replace(/\.jsonl$/, '')}.jsonl`
+    : undefined
   const relativeTranscriptPath =
-    task.originSessionId && task.transcriptKey
-      ? join(task.originSessionId, 'subagents', task.transcriptKey)
+    task.originSessionId && transcriptFilename
+      ? join(task.originSessionId, 'subagents', transcriptFilename)
       : undefined
   const event = {
     runId,
