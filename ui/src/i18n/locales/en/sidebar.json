@@ -75,6 +75,7 @@
   },
   "actions": {
     "refresh": "Refresh",
+    "dashboard": "Dashboard",
     "settings": "Settings",
     "collapseAll": "Collapse All",
     "expandAll": "Expand All",

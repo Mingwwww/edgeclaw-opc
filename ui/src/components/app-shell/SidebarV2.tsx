@@ -1013,12 +1013,12 @@ export default function SidebarV2({
             onDeselectProject?.();
             onSelectTab('dashboard');
           }}
-          aria-label="Dashboard"
-          title="Dashboard"
+          aria-label={t('sidebar:actions.dashboard', { defaultValue: 'Dashboard' }) as string}
+          title={t('sidebar:actions.dashboard', { defaultValue: 'Dashboard' }) as string}
           className="flex h-9 w-full items-center justify-start gap-2 rounded-lg px-6 text-[13px] font-medium text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
         >
           <BarChart3 className="h-4 w-4" strokeWidth={1.75} />
-          <span>Dashboard</span>
+          <span>{t('sidebar:actions.dashboard', { defaultValue: 'Dashboard' })}</span>
         </button>
         <button
           type="button"

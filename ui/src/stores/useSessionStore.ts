@@ -201,6 +201,23 @@ function computeMerged(server: NormalizedMessage[], realtime: NormalizedMessage[
     return true;
   });
   if (extra.length === 0) return server;
+
+  // Structural dedup: if there's an active __streaming_ message in extras
+  // AND the server's last message is an assistant text, the server captured
+  // a snapshot of the in-progress turn via a mid-stream fetchFromServer.
+  // Replace the server snapshot with the live streaming version (which is
+  // more up-to-date) to avoid rendering both.
+  const streamIdx = extra.findIndex(m => m.id.startsWith('__streaming_'));
+  if (streamIdx >= 0 && server.length > 0) {
+    const lastServer = server[server.length - 1];
+    if (lastServer.kind === 'text' && lastServer.role === 'assistant') {
+      const merged = server.slice(0, -1);
+      merged.push(extra[streamIdx]);
+      const otherExtras = extra.filter((_, i) => i !== streamIdx);
+      return otherExtras.length === 0 ? merged : [...merged, ...otherExtras];
+    }
+  }
+
   return [...server, ...extra];
 }
 
@@ -275,6 +292,8 @@ export function useSessionStore() {
     slot.status = 'loading';
     notify(sessionId);
 
+    const fetchStartedAt = Date.now();
+
     try {
       const params = new URLSearchParams();
       if (opts.provider) params.append('provider', opts.provider);
@@ -307,6 +326,22 @@ export function useSessionStore() {
       slot.offset = (opts.offset ?? 0) + messages.length;
       slot.fetchedAt = Date.now();
       slot.status = 'idle';
+
+      // Prune realtime messages covered by server data.  Use the later of
+      // fetchStartedAt and the latest server message timestamp as watermark
+      // so that messages finalized DURING the fetch (race window) are also
+      // pruned when the server response already includes them.
+      if (slot.realtimeMessages.length > 0 && messages.length > 0) {
+        const latestServerTs = messages.reduce(
+          (max, m) => Math.max(max, Date.parse(m.timestamp) || 0), 0,
+        );
+        const watermark = Math.max(fetchStartedAt, latestServerTs);
+        slot.realtimeMessages = slot.realtimeMessages.filter(m => {
+          if (m.id.startsWith('__streaming_')) return true;
+          return (Date.parse(m.timestamp) || 0) > watermark;
+        });
+      }
+
       recomputeMergedIfNeeded(slot);
       if (data.tokenUsage) {
         slot.tokenUsage = data.tokenUsage;
@@ -506,10 +541,11 @@ export function useSessionStore() {
     const idx = slot.realtimeMessages.findIndex(m => m.id === streamId);
     if (idx >= 0) {
       const stream = slot.realtimeMessages[idx];
+      const newId = `text_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       slot.realtimeMessages = [...slot.realtimeMessages];
       slot.realtimeMessages[idx] = {
         ...stream,
-        id: `text_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: newId,
         kind: 'text',
         role: 'assistant',
       };

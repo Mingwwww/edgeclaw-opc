@@ -75,6 +75,7 @@
   },
   "actions": {
     "refresh": "刷新",
+    "dashboard": "仪表盘",
     "settings": "设置",
     "collapseAll": "全部折叠",
     "expandAll": "全部展开",
