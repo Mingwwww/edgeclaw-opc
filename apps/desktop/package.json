@@ -1,6 +1,6 @@
 {
   "name": "@edgeclaw/desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "EdgeClaw macOS Desktop App (Electron shell + claudecodeui + claude-code-main)",
   "main": "dist/main.js",
   "private": true,
