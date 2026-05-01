@@ -7,13 +7,18 @@ import { DEFAULT_DISCOVERY_TRIGGER_CONFIG } from './config.js'
 import { releaseDiscoveryLock } from './lock.js'
 import { getAlwaysOnHeartbeatsDir, getAlwaysOnHeartbeatPath } from '../../utils/alwaysOnPaths.js'
 
-const config = {
-  ...DEFAULT_DISCOVERY_TRIGGER_CONFIG,
-  enabled: true,
-  cooldownMinutes: 60,
-  dailyBudget: 4,
-  heartbeatStaleSeconds: 90,
-  recentUserMsgMinutes: 5,
+function configFor(projectRoot: string) {
+  return {
+    ...DEFAULT_DISCOVERY_TRIGGER_CONFIG,
+    enabled: true,
+    cooldownMinutes: 60,
+    dailyBudget: 4,
+    heartbeatStaleSeconds: 90,
+    recentUserMsgMinutes: 5,
+    projectSettings: {
+      [projectRoot]: { enabled: true },
+    },
+  }
 }
 
 describe('always-on discovery gates', () => {
@@ -43,11 +48,28 @@ describe('always-on discovery gates', () => {
   test('blocks without a fresh client', async () => {
     const result = await evaluateDiscoveryGates(
       projectRoot,
-      config,
+      configFor(projectRoot),
       new Date('2026-04-29T00:00:00.000Z'),
     )
 
     expect(result).toEqual({ ok: false, reason: 'no_fresh_heartbeat' })
+  })
+
+  test('blocks when the project is not opted in', async () => {
+    await writeBeat({
+      writtenAt: '2026-04-29T00:00:00.000Z',
+    })
+
+    const result = await evaluateDiscoveryGates(
+      projectRoot,
+      {
+        ...configFor(projectRoot),
+        projectSettings: {},
+      },
+      new Date('2026-04-29T00:00:30.000Z'),
+    )
+
+    expect(result).toEqual({ ok: false, reason: 'project_disabled' })
   })
 
   test('blocks when an agent is busy', async () => {
@@ -55,7 +77,7 @@ describe('always-on discovery gates', () => {
 
     const result = await evaluateDiscoveryGates(
       projectRoot,
-      config,
+      configFor(projectRoot),
       new Date('2026-04-29T00:00:30.000Z'),
     )
 
@@ -70,7 +92,7 @@ describe('always-on discovery gates', () => {
 
     const result = await evaluateDiscoveryGates(
       projectRoot,
-      config,
+      configFor(projectRoot),
       new Date('2026-04-29T00:08:00.000Z'),
     )
 
@@ -82,7 +104,7 @@ describe('always-on discovery gates', () => {
 
     const result = await evaluateDiscoveryGates(
       projectRoot,
-      config,
+      configFor(projectRoot),
       new Date('2026-04-29T00:00:30.000Z'),
     )
 

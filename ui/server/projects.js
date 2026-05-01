@@ -69,6 +69,7 @@ import sessionManager from './sessionManager.js';
 import { applyCustomSessionNames } from './database/db.js';
 import { sendCronDaemonRequest } from './services/cron-daemon-owner.js';
 import { readEdgeClawConfigFile } from './services/edgeclawConfig.js';
+import { readRunHistoryRecords } from './services/always-on-run-history.js';
 
 // Import TaskMaster detection functions
 async function detectTaskMasterFolder(projectPath) {
@@ -1131,25 +1132,92 @@ async function listProjectRuntimeCronTasks(projectRoot) {
   }
 }
 
-function mapCronJobStatus(task, backgroundSession, runtimeTask) {
+function normalizeCronRunStatus(value) {
+  const normalizedStatus = String(value || '').trim().toLowerCase();
+  if (normalizedStatus === 'completed') {
+    return 'completed';
+  }
+  if (normalizedStatus === 'failed' || normalizedStatus === 'stopped' || normalizedStatus === 'killed') {
+    return 'failed';
+  }
+  if (normalizedStatus === 'running' || normalizedStatus === 'queued') {
+    return normalizedStatus;
+  }
+  return '';
+}
+
+function mapCronJobStatus(task, backgroundSession, runtimeTask, latestRunRecord) {
   if (runtimeTask?.running) {
     return 'running';
   }
 
-  if (!backgroundSession) {
-    return task.transcriptKey ? 'unknown' : 'scheduled';
-  }
-
-  const normalizedStatus = String(backgroundSession.taskStatus || '').trim().toLowerCase();
-  if (normalizedStatus === 'completed') {
+  const latestRunStatus = normalizeCronRunStatus(
+    backgroundSession?.taskStatus || latestRunRecord?.status
+  );
+  if (!task.recurring && latestRunStatus === 'completed') {
     return 'completed';
   }
-
-  if (normalizedStatus === 'failed' || normalizedStatus === 'stopped' || normalizedStatus === 'killed') {
+  if (!task.recurring && latestRunStatus === 'failed') {
     return 'failed';
   }
 
-  return 'unknown';
+  return 'scheduled';
+}
+
+function getRunHistoryTranscriptLookupKeys(record) {
+  const keys = new Set();
+  for (const value of [
+    record?.transcriptKey,
+    record?.metadata?.transcriptKey,
+  ]) {
+    for (const key of getCronTranscriptLookupKeys(value)) {
+      keys.add(key);
+    }
+  }
+  return Array.from(keys);
+}
+
+function buildCronRunHistoryIndex(records) {
+  const byTaskId = new Map();
+  const byTranscriptKey = new Map();
+
+  for (const record of records) {
+    if (record?.kind !== 'cron') {
+      continue;
+    }
+
+    if (
+      typeof record.sourceId === 'string' &&
+      record.sourceId.trim().length > 0 &&
+      !byTaskId.has(record.sourceId)
+    ) {
+      byTaskId.set(record.sourceId, record);
+    }
+
+    for (const lookupKey of getRunHistoryTranscriptLookupKeys(record)) {
+      if (!byTranscriptKey.has(lookupKey)) {
+        byTranscriptKey.set(lookupKey, record);
+      }
+    }
+  }
+
+  return { byTaskId, byTranscriptKey };
+}
+
+function findLatestCronRunRecord(task, runHistoryIndex) {
+  const byTaskId = runHistoryIndex.byTaskId.get(task.id);
+  if (byTaskId) {
+    return byTaskId;
+  }
+
+  for (const lookupKey of getCronTranscriptLookupKeys(task.transcriptKey)) {
+    const byTranscriptKey = runHistoryIndex.byTranscriptKey.get(lookupKey);
+    if (byTranscriptKey) {
+      return byTranscriptKey;
+    }
+  }
+
+  return null;
 }
 
 async function getProjectCronJobsOverview(projectName) {
@@ -1179,6 +1247,16 @@ async function getProjectCronJobsOverview(projectName) {
     }
   }
 
+  let runHistoryIndex = buildCronRunHistoryIndex([]);
+  try {
+    runHistoryIndex = buildCronRunHistoryIndex(await readRunHistoryRecords(projectRoot));
+  } catch (error) {
+    console.warn(
+      `Failed to read cron run history for ${projectRoot}:`,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+
   const backgroundSessionsByTranscriptKey = new Map();
   for (const session of backgroundSessions) {
     if (typeof session.transcriptKey !== 'string' || session.transcriptKey.trim().length === 0) {
@@ -1206,27 +1284,60 @@ async function getProjectCronJobsOverview(projectName) {
       ? backgroundSessionsByTranscriptKey.get(task.transcriptKey) || null
       : null;
     const runtimeTask = runtimeTasksById.get(task.id) || null;
+    const latestRunRecord = findLatestCronRunRecord(task, runHistoryIndex);
+    const latestRunStatus = normalizeCronRunStatus(
+      backgroundSession?.taskStatus || latestRunRecord?.status
+    );
 
     return {
       ...task,
-      status: mapCronJobStatus(task, backgroundSession, runtimeTask),
-      latestRun: backgroundSession
+      status: mapCronJobStatus(task, backgroundSession, runtimeTask, latestRunRecord),
+      latestRun: backgroundSession || latestRunRecord
         ? {
-            sessionId: typeof backgroundSession.id === 'string' ? backgroundSession.id : '',
-            summary: typeof backgroundSession.summary === 'string' ? backgroundSession.summary : '',
-            lastActivity: typeof backgroundSession.lastActivity === 'string' ? backgroundSession.lastActivity : '',
-            taskId: typeof backgroundSession.taskId === 'string' ? backgroundSession.taskId : '',
-            outputFile: typeof backgroundSession.outputFile === 'string' ? backgroundSession.outputFile : '',
-            parentSessionId: typeof backgroundSession.parentSessionId === 'string' ? backgroundSession.parentSessionId : '',
-            transcriptKey: typeof backgroundSession.transcriptKey === 'string' ? backgroundSession.transcriptKey : '',
-            relativeTranscriptPath: typeof backgroundSession.parentSessionId === 'string' &&
-              typeof backgroundSession.transcriptKey === 'string'
+            status: latestRunStatus || undefined,
+            runId: typeof latestRunRecord?.runId === 'string' ? latestRunRecord.runId : '',
+            startedAt: typeof latestRunRecord?.startedAt === 'string' ? latestRunRecord.startedAt : '',
+            sessionId: typeof backgroundSession?.id === 'string' ? backgroundSession.id : '',
+            summary: typeof backgroundSession?.summary === 'string'
+              ? backgroundSession.summary
+              : typeof latestRunRecord?.title === 'string'
+                ? latestRunRecord.title
+                : '',
+            lastActivity: typeof backgroundSession?.lastActivity === 'string'
+              ? backgroundSession.lastActivity
+              : typeof latestRunRecord?.updatedAt === 'string'
+                ? latestRunRecord.updatedAt
+                : '',
+            taskId: typeof backgroundSession?.taskId === 'string'
+              ? backgroundSession.taskId
+              : typeof latestRunRecord?.metadata?.taskId === 'string'
+                ? latestRunRecord.metadata.taskId
+                : '',
+            outputFile: typeof backgroundSession?.outputFile === 'string'
+              ? backgroundSession.outputFile
+              : typeof latestRunRecord?.metadata?.outputFile === 'string'
+                ? latestRunRecord.metadata.outputFile
+                : '',
+            parentSessionId: typeof backgroundSession?.parentSessionId === 'string'
+              ? backgroundSession.parentSessionId
+              : typeof latestRunRecord?.parentSessionId === 'string'
+                ? latestRunRecord.parentSessionId
+                : '',
+            transcriptKey: typeof backgroundSession?.transcriptKey === 'string'
+              ? backgroundSession.transcriptKey
+              : typeof latestRunRecord?.transcriptKey === 'string'
+                ? latestRunRecord.transcriptKey
+                : '',
+            relativeTranscriptPath: typeof backgroundSession?.parentSessionId === 'string' &&
+              typeof backgroundSession?.transcriptKey === 'string'
               ? normalizePathSeparators(
                   path.join(backgroundSession.parentSessionId, 'subagents', backgroundSession.transcriptKey)
                 )
-              : typeof backgroundSession.relativeTranscriptPath === 'string'
+              : typeof backgroundSession?.relativeTranscriptPath === 'string'
                 ? backgroundSession.relativeTranscriptPath
-                : ''
+                : typeof latestRunRecord?.relativeTranscriptPath === 'string'
+                  ? latestRunRecord.relativeTranscriptPath
+                  : ''
           }
         : null
     };

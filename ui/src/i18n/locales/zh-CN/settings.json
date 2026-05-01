@@ -459,6 +459,57 @@
       "description": "Codex 支持基于 stdio 的 MCP 服务器。您可以添加服务器，通过额外的工具和资源来扩展 Codex 的功能。"
     }
   },
+  "edgeClawConfig": {
+    "loading": "正在加载 EdgeClaw 配置...",
+    "header": {
+      "configFile": "配置文件",
+      "configPreview": "配置预览",
+      "unsaved": "未保存"
+    },
+    "viewMode": {
+      "form": "表单",
+      "rawYaml": "原始 YAML"
+    },
+    "actions": {
+      "opening": "正在打开...",
+      "revealFile": "显示文件",
+      "refresh": "刷新"
+    },
+    "sections": {
+      "runtime": {
+        "label": "运行时",
+        "description": "端口、主机、超时和数据库位置"
+      },
+      "models": {
+        "label": "模型",
+        "description": "提供商和命名模型条目"
+      },
+      "agents": {
+        "label": "智能体",
+        "description": "主智能体和子智能体的模型绑定"
+      },
+      "alwaysOn": {
+        "label": "常驻",
+        "description": "自动发现和工作区启用设置"
+      },
+      "security": {
+        "label": "安全",
+        "description": "路径屏蔽和访问控制"
+      },
+      "memory": {
+        "label": "记忆",
+        "description": "EdgeClaw 记忆服务"
+      },
+      "router": {
+        "label": "路由",
+        "description": "Claude Code Router（CCR）"
+      },
+      "gateway": {
+        "label": "网关",
+        "description": "消息网关主页和频道"
+      }
+    }
+  },
   "pluginSettings": {
     "title": "插件",
     "description": "通过自定义插件扩展界面。从 git 安装或直接将文件夹放入 ~/.claude-code-ui/plugins/",

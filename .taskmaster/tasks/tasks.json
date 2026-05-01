@@ -1,0 +1,60 @@
+{
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Mac App 启动零弹窗：实现 lazy access",
+      "description": "将 getProjects() 中对用户项目目录的 stat/readdir 操作延迟到用户点击项目时执行，避免启动期触发 TCC 弹窗",
+      "status": "in-progress",
+      "priority": "high",
+      "subtasks": [
+        { "id": 101, "title": "getProjects 去掉 generateDisplayName 读 package.json", "status": "pending" },
+        { "id": 102, "title": "getProjects 去掉 detectTaskMasterFolder 调用", "status": "pending" },
+        { "id": 103, "title": "新增 enrichProject endpoint", "status": "pending" },
+        { "id": 104, "title": "前端兼容未验证状态", "status": "pending" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Onboarding 使用系统原生 Picker 选择工作区",
+      "description": "将 onboarding 中的路径输入框替换为 Electron dialog.showOpenDialog 调用",
+      "status": "pending",
+      "priority": "medium",
+      "subtasks": [
+        { "id": 201, "title": "添加 IPC handler select-workspace-folder", "status": "pending" },
+        { "id": 202, "title": "修改 onboarding-window.ts 前端 UI", "status": "pending" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "敏感路径黑名单",
+      "description": "在 validateWorkspacePath 中增加 ~/.ssh, ~/.aws, ~/Library/Keychains 等硬编码黑名单",
+      "status": "pending",
+      "priority": "medium",
+      "subtasks": []
+    },
+    {
+      "id": 4,
+      "title": "启动错误 dialog 增加"打开日志"按钮",
+      "description": "在启动失败 dialog 中添加一键打开 ~/.edgeclaw/desktop.server.log 和复制错误信息的功能",
+      "status": "done",
+      "priority": "low",
+      "subtasks": []
+    },
+    {
+      "id": 5,
+      "title": "TCC 权限状态诊断面板",
+      "description": "在设置页添加诊断 tab，展示 runtime 路径、log 路径、各 TCC 域的授权状态",
+      "status": "pending",
+      "priority": "low",
+      "subtasks": []
+    },
+    {
+      "id": 6,
+      "title": "config-validator 内容校验",
+      "description": "启动前用 config-validator.ts 校验 config.yaml 的必填字段，缺失则引导回 onboarding",
+      "status": "done",
+      "priority": "high",
+      "subtasks": []
+    }
+  ]
+}

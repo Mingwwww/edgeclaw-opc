@@ -459,6 +459,57 @@
       "description": "Codex supports stdio-based MCP servers. You can add servers that extend Codex's capabilities with additional tools and resources."
     }
   },
+  "edgeClawConfig": {
+    "loading": "Loading EdgeClaw config...",
+    "header": {
+      "configFile": "Config file",
+      "configPreview": "Config preview",
+      "unsaved": "Unsaved"
+    },
+    "viewMode": {
+      "form": "Form",
+      "rawYaml": "Raw YAML"
+    },
+    "actions": {
+      "opening": "Opening...",
+      "revealFile": "Reveal File",
+      "refresh": "Refresh"
+    },
+    "sections": {
+      "runtime": {
+        "label": "Runtime",
+        "description": "Ports, host, timeouts, database location"
+      },
+      "models": {
+        "label": "Models",
+        "description": "Providers and named model entries"
+      },
+      "agents": {
+        "label": "Agents",
+        "description": "Main agent + subagents model bindings"
+      },
+      "alwaysOn": {
+        "label": "Always-On",
+        "description": "Automatic discovery and workspace opt-in"
+      },
+      "security": {
+        "label": "Security",
+        "description": "Blocked paths and access control"
+      },
+      "memory": {
+        "label": "Memory",
+        "description": "EdgeClaw memory service"
+      },
+      "router": {
+        "label": "Router",
+        "description": "Claude Code Router (CCR)"
+      },
+      "gateway": {
+        "label": "Gateway",
+        "description": "Messaging gateway home + channels"
+      }
+    }
+  },
   "pluginSettings": {
     "title": "Plugins",
     "description": "Extend the interface with custom plugins. Install from git or drop a folder in ~/.claude-code-ui/plugins/",

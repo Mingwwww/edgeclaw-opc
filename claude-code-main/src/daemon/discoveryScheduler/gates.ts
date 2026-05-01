@@ -1,4 +1,5 @@
 import { access } from 'fs/promises'
+import { resolve } from 'path'
 import { hasBusyHeartbeat, hasRecentUserMessage, readFreshHeartbeats } from './heartbeats.js'
 import { acquireDiscoveryLock } from './lock.js'
 import { readDiscoveryState } from './state.js'
@@ -27,6 +28,10 @@ export async function evaluateDiscoveryGates(
 ): Promise<GateResult> {
   if (!config.enabled) {
     return { ok: false, reason: 'disabled' }
+  }
+
+  if (config.projectSettings[resolve(projectRoot)]?.enabled !== true) {
+    return { ok: false, reason: 'project_disabled' }
   }
 
   try {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertCircle,
   CheckCircle2,
@@ -86,15 +87,15 @@ type EdgeClawConfig = {
 
 type SectionId = 'runtime' | 'models' | 'agents' | 'alwaysOn' | 'security' | 'memory' | 'router' | 'gateway';
 
-const SECTIONS: Array<{ id: SectionId; label: string; description: string }> = [
-  { id: 'runtime',  label: 'Runtime',  description: 'Ports, host, timeouts, database location' },
-  { id: 'models',   label: 'Models',   description: 'Providers and named model entries' },
-  { id: 'agents',   label: 'Agents',   description: 'Main agent + subagents model bindings' },
-  { id: 'alwaysOn', label: 'Always-On', description: 'Automatic discovery and workspace opt-in' },
-  { id: 'security', label: 'Security', description: 'Blocked paths and access control' },
-  { id: 'memory',   label: 'Memory',   description: 'EdgeClaw memory service' },
-  { id: 'router',   label: 'Router',   description: 'Claude Code Router (CCR)' },
-  { id: 'gateway',  label: 'Gateway',  description: 'Messaging gateway home + channels' },
+const SECTIONS: Array<{ id: SectionId; labelKey: string; descriptionKey: string }> = [
+  { id: 'runtime', labelKey: 'runtime',  descriptionKey: 'runtime' },
+  { id: 'models',  labelKey: 'models',   descriptionKey: 'models' },
+  { id: 'agents',  labelKey: 'agents',   descriptionKey: 'agents' },
+  { id: 'alwaysOn', labelKey: 'alwaysOn', descriptionKey: 'alwaysOn' },
+  { id: 'security', labelKey: 'security', descriptionKey: 'security' },
+  { id: 'memory',  labelKey: 'memory',   descriptionKey: 'memory' },
+  { id: 'router',  labelKey: 'router',   descriptionKey: 'router' },
+  { id: 'gateway', labelKey: 'gateway',  descriptionKey: 'gateway' },
 ];
 
 // ── Reload-status presentation (kept identical to legacy raw view) ──────
@@ -915,6 +916,7 @@ function RawYamlView({
 type ViewMode = 'form' | 'raw';
 
 export default function EdgeClawConfigTab({ projects = [] }: { projects?: SettingsProject[] }) {
+  const { t } = useTranslation('settings');
   const {
     path,
     raw,
@@ -983,7 +985,7 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-        Loading EdgeClaw config...
+        {t('edgeClawConfig.loading')}
       </div>
     );
   }
@@ -996,10 +998,10 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <FileCog className="h-4 w-4" />
-              {exists ? 'Config file' : 'Config preview'}
+              {exists ? t('edgeClawConfig.header.configFile') : t('edgeClawConfig.header.configPreview')}
               {isDirty && (
                 <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                  Unsaved
+                  {t('edgeClawConfig.header.unsaved')}
                 </span>
               )}
             </div>
@@ -1020,7 +1022,7 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
                 )}
               >
                 <LayoutList className="h-3.5 w-3.5" />
-                Form
+                {t('edgeClawConfig.viewMode.form')}
               </button>
               <button
                 type="button"
@@ -1031,16 +1033,16 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
                 )}
               >
                 <Code2 className="h-3.5 w-3.5" />
-                Raw YAML
+                {t('edgeClawConfig.viewMode.rawYaml')}
               </button>
             </div>
             <Button variant="outline" size="sm" onClick={openFile} disabled={opening}>
               <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
-              {opening ? 'Opening...' : 'Reveal File'}
+              {opening ? t('edgeClawConfig.actions.opening') : t('edgeClawConfig.actions.revealFile')}
             </Button>
             <Button variant="outline" size="sm" onClick={() => void refresh()}>
               <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-              Refresh
+              {t('edgeClawConfig.actions.refresh')}
             </Button>
           </div>
         </div>
@@ -1084,7 +1086,7 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
                       : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
                   )}
                 >
-                  {s.label}
+                  {t(`edgeClawConfig.sections.${s.labelKey}.label`)}
                 </button>
               ))}
             </nav>

@@ -6,6 +6,7 @@ export type DiscoveryTriggerConfig = {
   heartbeatStaleSeconds: number
   recentUserMsgMinutes: number
   preferClient: 'webui' | 'tui'
+  projectSettings: Record<string, { enabled: boolean }>
 }
 
 export type AlwaysOnHeartbeat = {
@@ -40,6 +41,7 @@ export type DiscoveryState = {
 
 export type GateBlockReason =
   | 'disabled'
+  | 'project_disabled'
   | 'project_missing'
   | 'no_fresh_heartbeat'
   | 'agent_busy'

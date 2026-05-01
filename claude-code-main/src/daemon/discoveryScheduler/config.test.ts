@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { getDiscoveryTriggerConfig } from './config.js'
 
 const previousConfigPath = process.env.EDGECLAW_CONFIG_PATH
@@ -40,6 +40,26 @@ alwaysOn:
     enabled: true,
     tickIntervalMinutes: 7,
     preferClient: 'tui',
+  })
+})
+
+test('getDiscoveryTriggerConfig reads and normalizes project opt-in settings', async () => {
+  const projectRoot = join(tmpdir(), 'always-on-config-project', '..', 'always-on-config-project')
+  await writeConfig(`
+alwaysOn:
+  discovery:
+    trigger:
+      enabled: true
+    projects:
+      "${projectRoot}":
+        enabled: true
+      "/workspace/disabled":
+        enabled: false
+`)
+
+  expect(getDiscoveryTriggerConfig().projectSettings).toEqual({
+    [resolve(projectRoot)]: { enabled: true },
+    [resolve('/workspace/disabled')]: { enabled: false },
   })
 })
 

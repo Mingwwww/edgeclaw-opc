@@ -1,3 +1,4 @@
+import { resolve } from 'path'
 import { loadEdgeClawConfig } from '../../../edgeclaw-config.js'
 import type { DiscoveryTriggerConfig } from './types.js'
 
@@ -9,6 +10,7 @@ export const DEFAULT_DISCOVERY_TRIGGER_CONFIG: DiscoveryTriggerConfig = {
   heartbeatStaleSeconds: 90,
   recentUserMsgMinutes: 5,
   preferClient: 'webui',
+  projectSettings: {},
 }
 
 function positiveNumber(value: unknown, fallback: number): number {
@@ -17,8 +19,29 @@ function positiveNumber(value: unknown, fallback: number): number {
     : fallback
 }
 
+function readProjectSettings(value: unknown): DiscoveryTriggerConfig['projectSettings'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+
+  const settings: DiscoveryTriggerConfig['projectSettings'] = {}
+  for (const [projectRoot, rawSettings] of Object.entries(value)) {
+    if (typeof projectRoot !== 'string' || projectRoot.trim().length === 0) {
+      continue
+    }
+    settings[resolve(projectRoot)] = {
+      enabled:
+        typeof rawSettings === 'object' &&
+        rawSettings !== null &&
+        (rawSettings as { enabled?: unknown }).enabled === true,
+    }
+  }
+  return settings
+}
+
 export function getDiscoveryTriggerConfig(): DiscoveryTriggerConfig {
-  const raw = (loadEdgeClawConfig() as any).alwaysOn?.discovery?.trigger
+  const discovery = (loadEdgeClawConfig() as any).alwaysOn?.discovery
+  const raw = discovery?.trigger
   const preferClient = raw?.preferClient === 'tui' ? 'tui' : 'webui'
 
   return {
@@ -44,5 +67,6 @@ export function getDiscoveryTriggerConfig(): DiscoveryTriggerConfig {
       DEFAULT_DISCOVERY_TRIGGER_CONFIG.recentUserMsgMinutes,
     ),
     preferClient,
+    projectSettings: readProjectSettings(discovery?.projects),
   }
 }

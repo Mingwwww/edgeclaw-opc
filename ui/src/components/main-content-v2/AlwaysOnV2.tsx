@@ -114,6 +114,14 @@ function getPlanFileName(plan: DiscoveryPlanOverview): string {
   return (fileName || plan.title).replace(/\.md$/i, '');
 }
 
+function getPlanFileLocation(projectRoot: string, planFilePath: string): string {
+  const filePath = planFilePath.trim();
+  if (!filePath) return '—';
+  if (/^(?:[a-zA-Z]:[\\/]|\/)/.test(filePath)) return filePath;
+  const root = projectRoot.trim().replace(/[\\/]$/, '');
+  return root ? `${root}/${filePath.replace(/^[\\/]/, '')}` : filePath;
+}
+
 export function getPlanRowTitle(plan: DiscoveryPlanOverview): string {
   return plan.title || getPlanFileName(plan);
 }
@@ -236,7 +244,7 @@ export function isActivePlan(plan: DiscoveryPlanOverview): boolean {
 }
 
 export function isActiveCronJob(job: CronJobOverview): boolean {
-  return job.status !== 'completed' && job.status !== 'unknown';
+  return job.recurring || job.status !== 'completed';
 }
 
 export function isVisibleRunHistoryEntry(run: AlwaysOnRunHistoryEntry): boolean {
@@ -496,7 +504,6 @@ export default function AlwaysOnV2({
   const rows = getRows(plans, cronJobs, t);
   const detailRow = detailRowId ? rows.find((row) => row.id === detailRowId) || null : null;
   const projectRoot = selectedProject?.fullPath || selectedProject?.path || selectedProject?.name || '';
-  const claudeDirectory = projectRoot ? `${projectRoot.replace(/\/$/, '')}/.claude` : '.claude';
 
   if (!selectedProject) {
     return (
@@ -773,6 +780,7 @@ export default function AlwaysOnV2({
 
   const renderPlanDetail = (row: Extract<AlwaysOnRow, { kind: 'plan' }>) => {
     const { plan } = row;
+    const planFileLocation = getPlanFileLocation(projectRoot, plan.planFilePath);
 
     return (
       <>
@@ -807,13 +815,13 @@ export default function AlwaysOnV2({
             </DetailSection>
           </div>
           <aside className="space-y-4">
-            <DetailSection title={t('detail.sections.planFile', { defaultValue: 'Plan File' })}>
+            <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
               <div className="space-y-4">
-                <DetailMetaItem label={t('detail.fields.claudeDirectory', { defaultValue: '.claude directory' })} value={claudeDirectory} mono />
+                <DetailMetaItem label={t('detail.fields.fileLocation', { defaultValue: 'File location' })} value={planFileLocation} mono />
                 <DetailMetaItem label={t('detail.fields.createdAt', { defaultValue: 'Created' })} value={formatTime(plan.createdAt)} mono />
                 <DetailMetaItem label={t('detail.fields.updatedAt', { defaultValue: 'Updated' })} value={formatTime(plan.updatedAt)} mono />
               </div>
-            </DetailSection>
+            </section>
             <DetailSection title={t('detail.sections.contextRefs', { defaultValue: 'Context Refs' })}>
               {renderContextRefs(plan)}
             </DetailSection>

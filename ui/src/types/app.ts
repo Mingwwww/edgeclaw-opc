@@ -3,9 +3,13 @@ export type ProjectSessionKind = 'background_task';
 
 export type AppTab = 'home' | 'chat' | 'always-on' | 'files' | 'shell' | 'git' | 'tasks' | 'memory' | 'skills' | 'preview' | 'dashboard' | `plugin:${string}`;
 
-export type CronJobOverviewStatus = 'scheduled' | 'running' | 'completed' | 'failed' | 'unknown';
+export type CronJobOverviewStatus = 'scheduled' | 'running' | 'completed' | 'failed';
+export type CronJobLatestRunStatus = 'queued' | 'running' | 'completed' | 'failed';
 
 export interface CronJobLatestRun {
+  status?: CronJobLatestRunStatus;
+  runId?: string;
+  startedAt?: string;
   sessionId?: string;
   summary?: string;
   lastActivity?: string;

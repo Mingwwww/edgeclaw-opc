@@ -135,6 +135,7 @@ export default function AppShellV2() {
     handleSessionSelect,
     handleNewSession,
     handleDeselectProject,
+    handleResetProjectSessionPreview,
     setSelectedProject,
     loadMoreSessions,
     loadingMoreProjectIds,
@@ -556,6 +557,7 @@ export default function AppShellV2() {
 	      onRequestDeleteSession={handleRequestDeleteSession}
 	      onShowSettings={onShowSettings}
 	      onDeselectProject={handleDeselectProject}
+	      onResetProjectSessionPreview={handleResetProjectSessionPreview}
 	      onCollapse={onCollapseSidebar}
 	      onLoadMoreSessions={loadMoreSessions}
 	      loadingMoreProjectIds={loadingMoreProjectIds}

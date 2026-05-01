@@ -66,10 +66,12 @@ describe('AlwaysOnV2 active item filtering', () => {
     ).toBe('Investigate flaky tests');
   });
 
-  it('hides completed and unknown cron jobs from the active list', () => {
+  it('hides completed one-shot cron jobs from the active list', () => {
     expect(isActiveCronJob({ ...baseCronJob, recurring: false, status: 'completed' })).toBe(false);
-    expect(isActiveCronJob({ ...baseCronJob, recurring: true, status: 'completed' })).toBe(false);
-    expect(isActiveCronJob({ ...baseCronJob, recurring: false, status: 'unknown' })).toBe(false);
+  });
+
+  it('keeps recurring cron jobs visible even after a completed run', () => {
+    expect(isActiveCronJob({ ...baseCronJob, recurring: true, status: 'completed' })).toBe(true);
   });
 
   it('keeps failed running and scheduled cron jobs visible in the active list', () => {

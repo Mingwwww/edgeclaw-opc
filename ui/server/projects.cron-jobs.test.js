@@ -68,6 +68,10 @@ async function writeSessionScheduledTasks(projectRoot, tasks) {
   );
 }
 
+async function writeRunHistory(projectRoot, events) {
+  await writeJsonl(path.join(projectRoot, '.claude', 'always-on', 'run-history.jsonl'), events);
+}
+
 async function writeJsonl(filePath, entries) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(
@@ -406,7 +410,8 @@ test('getProjectCronJobsOverview matches recurring cron jobs to completed backgr
   const overview = await getProjectCronJobsOverview(projectName);
 
   assert.equal(overview.jobs.length, 1);
-  assert.equal(overview.jobs[0].status, 'completed');
+  assert.equal(overview.jobs[0].status, 'scheduled');
+  assert.equal(overview.jobs[0].latestRun?.status, 'completed');
   assert.equal(overview.jobs[0].transcriptKey, taskTranscriptKey);
   assert.equal(
     overview.jobs[0].latestRun?.sessionId,
@@ -419,6 +424,105 @@ test('getProjectCronJobsOverview matches recurring cron jobs to completed backgr
     overview.jobs[0].latestRun?.relativeTranscriptPath,
     `${parentSessionId}/subagents/${transcriptFileName}`
   );
+});
+
+test('getProjectCronJobsOverview keeps recurring cron scheduled when taskStatus is missing', async () => {
+  const homeDir = await createTempHome();
+  const projectName = 'project-with-legacy-cron-status';
+  const projectRoot = path.join(homeDir, 'workspace-legacy-cron-status');
+  const parentSessionId = 'parent-session-legacy';
+  const transcriptFileName = 'agent-cron-thread-legacy.jsonl';
+  const taskTranscriptKey = 'cron-thread-legacy';
+  const runId = 'run-legacy-completed';
+
+  await fs.mkdir(projectRoot, { recursive: true });
+  await writeProjectConfig(homeDir, projectName, projectRoot);
+  await writeJsonl(
+    path.join(homeDir, '.claude', 'projects', projectName, parentSessionId, 'subagents', transcriptFileName),
+    [
+      {
+        timestamp: '2026-04-19T10:00:00.000Z',
+        message: {
+          role: 'user',
+          content: 'Legacy recurring cron prompt'
+        }
+      }
+    ]
+  );
+  await writeRunHistory(projectRoot, [
+    {
+      runId,
+      projectRoot,
+      kind: 'cron',
+      sourceId: 'cron-legacy',
+      title: 'Legacy cron completed',
+      status: 'completed',
+      timestamp: '2026-04-19T10:05:00.000Z',
+      startedAt: '2026-04-19T10:00:00.000Z',
+      finishedAt: '2026-04-19T10:05:00.000Z',
+      parentSessionId,
+      relativeTranscriptPath: `${parentSessionId}/subagents/${transcriptFileName}`,
+      transcriptKey: taskTranscriptKey,
+      metadata: {
+        taskId: 'cron-legacy',
+        transcriptKey: taskTranscriptKey
+      }
+    }
+  ]);
+  await writeSessionScheduledTasks(projectRoot, [
+    {
+      id: 'cron-legacy',
+      cron: '7 * * * *',
+      prompt: '# Legacy cron',
+      createdAt: 1713511000000,
+      lastFiredAt: 1713512000000,
+      recurring: true,
+      originSessionId: parentSessionId,
+      transcriptKey: taskTranscriptKey
+    }
+  ]);
+
+  const overview = await getProjectCronJobsOverview(projectName);
+
+  assert.equal(overview.jobs.length, 1);
+  assert.equal(overview.jobs[0].status, 'scheduled');
+  assert.equal(overview.jobs[0].latestRun?.status, 'completed');
+  assert.equal(overview.jobs[0].latestRun?.runId, runId);
+});
+
+test('getProjectCronJobsOverview marks completed one-shot cron jobs as completed', async () => {
+  const homeDir = await createTempHome();
+  const projectName = 'project-with-completed-one-shot-cron';
+  const projectRoot = path.join(homeDir, 'workspace-completed-one-shot');
+  const parentSessionId = 'parent-session-completed-shot';
+  const transcriptFileName = 'agent-cron-shot-completed.jsonl';
+
+  await fs.mkdir(projectRoot, { recursive: true });
+  await writeProjectConfig(homeDir, projectName, projectRoot);
+  await createBackgroundCronArtifacts({
+    homeDir,
+    projectName,
+    parentSessionId,
+    transcriptFileName,
+    status: 'completed',
+    summary: 'Cron task "One-shot cron cron-shot" completed'
+  });
+  await writeScheduledTasks(projectRoot, [
+    {
+      id: 'cron-shot',
+      cron: '30 10 19 4 *',
+      prompt: 'Run a one-shot check',
+      createdAt: 1713511000000,
+      originSessionId: parentSessionId,
+      transcriptKey: transcriptFileName
+    }
+  ]);
+
+  const overview = await getProjectCronJobsOverview(projectName);
+
+  assert.equal(overview.jobs.length, 1);
+  assert.equal(overview.jobs[0].status, 'completed');
+  assert.equal(overview.jobs[0].latestRun?.status, 'completed');
 });
 
 test('deleteSession removes background cron transcript files', async () => {
@@ -600,7 +704,8 @@ test('getProjectCronJobsOverview matches recurring cron jobs to failed backgroun
   const overview = await getProjectCronJobsOverview(projectName);
 
   assert.equal(overview.jobs.length, 1);
-  assert.equal(overview.jobs[0].status, 'failed');
+  assert.equal(overview.jobs[0].status, 'scheduled');
+  assert.equal(overview.jobs[0].latestRun?.status, 'failed');
   assert.equal(overview.jobs[0].latestRun?.summary, 'Cron task "Recurring cron cron-9012" failed');
   assert.equal(overview.jobs[0].latestRun?.taskId, 'task-failed');
 });
@@ -658,6 +763,7 @@ test('getProjectCronJobsOverview marks daemon-running cron jobs as running', asy
 
     assert.equal(overview.jobs.length, 1);
     assert.equal(overview.jobs[0].status, 'running');
+    assert.equal(overview.jobs[0].latestRun?.status, 'completed');
     assert.equal(overview.jobs[0].latestRun?.summary, 'Cron task "Recurring cron cron-running" completed');
     assert.deepEqual(requests, [{
       type: 'list_tasks',

@@ -72,6 +72,7 @@
     },
     "fields": {
       "claudeDirectory": ".claude 目录",
+      "fileLocation": "文件位置",
       "filePath": "文件路径",
       "planTitle": "Plan 标题",
       "approvalMode": "批准模式",

@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
+import { mkdtemp, mkdir, readdir, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join, resolve } from 'path'
+import { dirname, join, resolve } from 'path'
 import { CronDaemonServer } from './server.js'
 import { ProjectRuntime } from './projectRuntime.js'
+import { getCronDaemonDiscoveryRequestsDir } from './paths.js'
+import { getAlwaysOnHeartbeatPath } from '../utils/alwaysOnPaths.js'
 
 async function sleep(ms: number): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms))
@@ -437,6 +439,77 @@ describe('CronDaemonServer client leases', () => {
       await rm(configDir, { recursive: true, force: true })
       await rm(firstProjectRoot, { recursive: true, force: true })
       await rm(secondProjectRoot, { recursive: true, force: true })
+    }
+  })
+
+  test('register_project does not fire discovery for projects that are not opted in', async () => {
+    const previousConfigDir = process.env.CLAUDE_CONFIG_DIR
+    const previousEdgeClawConfigPath = process.env.EDGECLAW_CONFIG_PATH
+    const configDir = await mkdtemp(
+      join(tmpdir(), 'cron-daemon-server-config-opt-in-'),
+    )
+    const projectRoot = await mkdtemp(
+      join(tmpdir(), 'cron-daemon-server-project-opt-in-'),
+    )
+    const edgeClawConfigPath = join(configDir, 'edgeclaw.yaml')
+    const heartbeatPath = getAlwaysOnHeartbeatPath(projectRoot, 'webui-test.beat')
+    const server = new CronDaemonServer()
+    process.env.CLAUDE_CONFIG_DIR = configDir
+    process.env.EDGECLAW_CONFIG_PATH = edgeClawConfigPath
+
+    try {
+      await writeFile(
+        edgeClawConfigPath,
+        `
+alwaysOn:
+  discovery:
+    trigger:
+      enabled: true
+      tickIntervalMinutes: 5
+    projects: {}
+`,
+        'utf-8',
+      )
+      await mkdir(dirname(heartbeatPath), { recursive: true })
+      await writeFile(
+        heartbeatPath,
+        JSON.stringify({
+          schemaVersion: 1,
+          writerKind: 'webui',
+          writerId: 'test',
+          writtenAt: new Date().toISOString(),
+          agentBusy: false,
+          processingSessionIds: [],
+          lastUserMsgAt: null,
+        }),
+        'utf-8',
+      )
+
+      const response = await (server as any).handleRequest({
+        type: 'register_project',
+        projectRoot,
+      })
+      await sleep(30)
+
+      const requestEntries = await readdir(getCronDaemonDiscoveryRequestsDir()).catch(
+        () => [],
+      )
+      expect(response.ok).toBe(true)
+      expect(requestEntries.filter(entry => entry.endsWith('.json'))).toEqual([])
+    } finally {
+      await server.stop()
+      if (previousConfigDir === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+      }
+      if (previousEdgeClawConfigPath === undefined) {
+        delete process.env.EDGECLAW_CONFIG_PATH
+      } else {
+        process.env.EDGECLAW_CONFIG_PATH = previousEdgeClawConfigPath
+      }
+      await rm(configDir, { recursive: true, force: true })
+      await rm(projectRoot, { recursive: true, force: true })
     }
   })
 })

@@ -1,0 +1,9 @@
+{
+  "models": {
+    "main": { "provider": "anthropic", "modelId": "claude-sonnet-4-20250514" },
+    "research": { "provider": "anthropic", "modelId": "claude-sonnet-4-20250514" }
+  },
+  "global": {
+    "logLevel": "info"
+  }
+}
