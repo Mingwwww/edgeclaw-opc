@@ -9,6 +9,22 @@ Each version below corresponds to a `vX.Y.Z` git tag — see `apps/desktop/RELEA
 
 ---
 
+## v0.1.3 - 2026-05-02
+
+### Fixed
+- 根治 Mac App 启动期连环 TCC 弹窗：getProjects() 不再在启动时 stat 用户项目目录（移除 detectTaskMasterFolder + package.json 读取）
+- workspacesRoot 默认值改为 ~/，Mac App ↔ Web UI 行为一致
+
+### Added
+- Settings → Security 面板：可编辑的敏感路径黑名单（默认屏蔽 ~/.ssh、~/.aws、~/Library/Keychains 等 9 条路径），带安全警告
+- validateWorkspacePath 接入可配置黑名单，plugin/MCP 无法访问受保护路径
+
+### Changed
+- Onboarding 精简为仅配置 API 凭证（移除"选择工作目录"步骤），减少首次启动的决策负担
+- 项目 displayName 不再读取 package.json，直接使用文件夹名（零 fs 开销、零 TCC 风险）
+
+---
+
 ## v0.1.2 - 2026-05-01
 
 ### Changed
