@@ -187,6 +187,7 @@ export function useChatRealtimeHandlers({
     if (msg.kind === 'stream_delta') {
       const text = msg.content || '';
       if (!text) return;
+
       streamBufferRef.current += text;
       accumulatedStreamRef.current += text;
       if (!streamTimerRef.current) {
