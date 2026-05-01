@@ -112,6 +112,71 @@ npm version 0.2.1 -m "release(desktop): v%s"
 
 ---
 
+## Apple Notarization 钥匙串问题（已知坑）
+
+### 症状
+
+`xcrun notarytool submit` 报 **"No Keychain password item found for profile: EdgeClaw"**，
+但凭证确实存过。有时重试能过，有时连续失败几小时。
+
+### 根因
+
+`notarytool store-credentials` 默认将凭证存入 **Data Protection Keychain**
+（即 iCloud 钥匙串 / Local Items），而非 `login.keychain-db`。
+Data Protection Keychain 有自己的锁定超时机制——macOS 在一段时间不活跃、屏幕锁定、
+或某些 codesign 操作后会静默锁定，导致 `notarytool` 读不到凭证。
+
+verbose 日志中的关键行：
+```
+[KEYCHAIN] Couldn't find keychain item matching [..., "sync": "syna", ...]
+```
+`"sync": "syna"` 表示它在查询可同步（iCloud）钥匙串中的条目。
+
+### 永久解决方案（推荐）
+
+将凭证重新存入 **文件钥匙串** `login.keychain-db`，避免 Data Protection Keychain：
+
+```bash
+# 1. 存凭证到 login.keychain-db（只需做一次）
+xcrun notarytool store-credentials "EdgeClaw" \
+  --apple-id <your-apple-id> \
+  --team-id 77Y5JFSH6H \
+  --password <app-specific-password> \
+  --keychain ~/Library/Keychains/login.keychain-db
+
+# 2. 之后所有 submit/history 命令都加 --keychain
+xcrun notarytool submit app.zip \
+  --keychain-profile EdgeClaw \
+  --keychain ~/Library/Keychains/login.keychain-db \
+  --wait
+```
+
+`release.sh` 已内置此参数，无需手动传。
+
+### 临时 Workaround
+
+如果还没重新存凭证，可以在 submit 前跑一次 `--verbose` 的 `history` 调用
+来"唤醒" Data Protection Keychain（不保证 100% 有效）：
+
+```bash
+xcrun notarytool history --keychain-profile EdgeClaw --verbose >/dev/null 2>&1
+xcrun notarytool submit ...
+```
+
+### 替代方案：App Store Connect API Key
+
+完全避开钥匙串，改用 API Key 认证（适合 CI/CD）：
+
+```bash
+xcrun notarytool submit app.zip \
+  --key ~/private_keys/AuthKey_XXXXXXXXXX.p8 \
+  --key-id XXXXXXXXXX \
+  --issuer xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --wait
+```
+
+---
+
 ## 一些常见陷阱
 
 1. **不要在 release.sh 里自动 bump**——同一份代码在我电脑/你电脑会被打成两个版本号；

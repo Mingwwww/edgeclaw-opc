@@ -46,6 +46,9 @@ SKIP_BUILD=0
 SKIP_NOTARIZE=0
 SKIP_VERIFY=0
 KEYCHAIN_PROFILE="${NOTARIZE_KEYCHAIN_PROFILE:-EdgeClaw}"
+KEYCHAIN_PATH="${NOTARIZE_KEYCHAIN_PATH:-$HOME/Library/Keychains/login.keychain-db}"
+KEYCHAIN_ARGS=(--keychain-profile "$KEYCHAIN_PROFILE")
+[[ -f "$KEYCHAIN_PATH" ]] && KEYCHAIN_ARGS+=(--keychain "$KEYCHAIN_PATH")
 
 for arg in "$@"; do
   case "$arg" in
@@ -151,14 +154,13 @@ else
 fi
 
 if [[ "$MODE" == "signed" && "$SKIP_NOTARIZE" == "0" ]]; then
-  if xcrun notarytool history --keychain-profile "$KEYCHAIN_PROFILE" >/dev/null 2>&1; then
-    ok "Notarize profile: ${KEYCHAIN_PROFILE}"
-    info "(if a later submit reports 'No Keychain password item found' despite this,"
-    info " it is almost always Apple notary throttling — see retry diagnostic below.)"
+  if xcrun notarytool history "${KEYCHAIN_ARGS[@]}" >/dev/null 2>&1; then
+    ok "Notarize profile: ${KEYCHAIN_PROFILE} (keychain: $(basename "$KEYCHAIN_PATH"))"
   else
     warn "Keychain profile '${KEYCHAIN_PROFILE}' not configured → skipping notarization"
     warn "Configure with: xcrun notarytool store-credentials \"${KEYCHAIN_PROFILE}\" \\"
-    warn "    --apple-id <email> --team-id ${TEAM_ID:-XXXXXXXXXX} --password <app-specific-pwd>"
+    warn "    --apple-id <email> --team-id ${TEAM_ID:-XXXXXXXXXX} --password <app-specific-pwd> \\"
+    warn "    --keychain ~/Library/Keychains/login.keychain-db"
     SKIP_NOTARIZE=1
   fi
 fi
@@ -403,14 +405,14 @@ step "Apple notarization"
     info "Submitting (attempt ${n}/${ATTEMPTS}, may take 5-20 min)…"
     LOG="$(mktemp)"
     if xcrun notarytool submit "$NZ_ZIP" \
-        --keychain-profile "$KEYCHAIN_PROFILE" --wait 2>&1 | tee "$LOG"; then
+        "${KEYCHAIN_ARGS[@]}" --wait 2>&1 | tee "$LOG"; then
       if grep -q "status: Accepted" "$LOG"; then
         NOTARIZE_OK=1; rm -f "$LOG"; break
       elif grep -q "status: Invalid" "$LOG"; then
         SID="$(grep -o 'id: [0-9a-f-]*' "$LOG" | head -1 | awk '{print $2}')"
         rm -f "$LOG"
         warn "Apple rejected. Inspect with:"
-        echo "      xcrun notarytool log ${SID} --keychain-profile \"${KEYCHAIN_PROFILE}\""
+        echo "      xcrun notarytool log ${SID} ${KEYCHAIN_ARGS[*]}"
         break
       fi
     fi
@@ -530,7 +532,7 @@ step "Notarize DMG (offline-friendly polish)"
   info "Submitting DMG envelope (1-3 min typically)…"
   DMG_LOG="$(mktemp)"
   if xcrun notarytool submit "$DMG_OUT" \
-      --keychain-profile "$KEYCHAIN_PROFILE" --wait 2>&1 | tee "$DMG_LOG"; then
+      "${KEYCHAIN_ARGS[@]}" --wait 2>&1 | tee "$DMG_LOG"; then
     if grep -q "status: Accepted" "$DMG_LOG"; then
       DMG_NOTARIZE_OK=1
     fi
@@ -544,11 +546,12 @@ step "Notarize DMG (offline-friendly polish)"
     fi
   else
     if grep -q "No Keychain password item found" "$DMG_LOG" 2>/dev/null; then
-      warn "DMG-level notarize hit notary throttling (.app inside still notarized)"
+      warn "DMG-level notarize hit keychain lock (.app inside still notarized)"
+      warn "  See RELEASING.md 'Apple Notarization 钥匙串问题' for permanent fix"
     else
       warn "DMG-level notarize failed (.app inside still notarized — non-fatal)"
     fi
-    info "  (Run later: xcrun notarytool submit \"$DMG_OUT\" --keychain-profile \"$KEYCHAIN_PROFILE\" --wait)"
+    info "  (Run later: xcrun notarytool submit \"$DMG_OUT\" ${KEYCHAIN_ARGS[*]} --wait)"
     info "  (Then:      xcrun stapler staple \"$DMG_OUT\")"
   fi
   rm -f "$DMG_LOG"
