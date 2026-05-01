@@ -319,29 +319,12 @@ function getProjectAlwaysOnConfig(projectRoot, projectConfig = {}, alwaysOnProje
   };
 }
 
-// Generate better display name from path
-async function generateDisplayName(projectName, actualProjectDir = null) {
-  // Use actual project directory if provided, otherwise decode from project name
-  let projectPath = actualProjectDir || projectName.replace(/-/g, '/');
+// Generate display name from path (folder name only — no fs access to avoid TCC popups on macOS)
+function generateDisplayName(projectName, actualProjectDir = null) {
+  const projectPath = actualProjectDir || projectName.replace(/-/g, '/');
 
-  // Try to read package.json from the project path
-  try {
-    const packageJsonPath = path.join(projectPath, 'package.json');
-    const packageData = await fs.readFile(packageJsonPath, 'utf8');
-    const packageJson = JSON.parse(packageData);
-
-    // Return the name from package.json if it exists
-    if (packageJson.name) {
-      return packageJson.name;
-    }
-  } catch (error) {
-    // Fall back to path-based naming if package.json doesn't exist or can't be read
-  }
-
-  // If it starts with /, it's an absolute path
   if (projectPath.startsWith('/')) {
     const parts = projectPath.split('/').filter(Boolean);
-    // Return only the last folder name
     return parts[parts.length - 1] || projectPath;
   }
 
@@ -515,7 +498,7 @@ async function getProjects(progressCallback = null) {
 
       // Get display name from config or generate one
       const customName = config[entry.name]?.displayName;
-      const autoDisplayName = await generateDisplayName(entry.name, actualProjectDir);
+      const autoDisplayName = generateDisplayName(entry.name, actualProjectDir);
       const fullPath = actualProjectDir;
 
       const project = {
@@ -588,25 +571,6 @@ async function getProjects(progressCallback = null) {
       }
       applyCustomSessionNames(project.geminiSessions, 'gemini');
 
-      // Add TaskMaster detection
-      try {
-        const taskMasterResult = await detectTaskMasterFolder(actualProjectDir);
-        project.taskmaster = {
-          hasTaskmaster: taskMasterResult.hasTaskmaster,
-          hasEssentialFiles: taskMasterResult.hasEssentialFiles,
-          metadata: taskMasterResult.metadata,
-          status: taskMasterResult.hasTaskmaster && taskMasterResult.hasEssentialFiles ? 'configured' : 'not-configured'
-        };
-      } catch (e) {
-        console.warn(`Could not detect TaskMaster for project ${entry.name}:`, e.message);
-        project.taskmaster = {
-          hasTaskmaster: false,
-          hasEssentialFiles: false,
-          metadata: null,
-          status: 'error'
-        };
-      }
-
       projects.push(project);
     }
   } catch (error) {
@@ -650,7 +614,7 @@ async function getProjects(progressCallback = null) {
       const project = {
         name: projectName,
         path: actualProjectDir,
-        displayName: projectConfig.displayName || await generateDisplayName(projectName, actualProjectDir),
+        displayName: projectConfig.displayName || generateDisplayName(projectName, actualProjectDir),
         fullPath: actualProjectDir,
         isCustomName: !!projectConfig.displayName,
         isManuallyAdded: true,
@@ -698,32 +662,6 @@ async function getProjects(progressCallback = null) {
         console.warn(`Could not load Gemini sessions for manual project ${projectName}:`, e.message);
       }
       applyCustomSessionNames(project.geminiSessions, 'gemini');
-
-      // Add TaskMaster detection for manual projects
-      try {
-        const taskMasterResult = await detectTaskMasterFolder(actualProjectDir);
-
-        // Determine TaskMaster status
-        let taskMasterStatus = 'not-configured';
-        if (taskMasterResult.hasTaskmaster && taskMasterResult.hasEssentialFiles) {
-          taskMasterStatus = 'taskmaster-only'; // We don't check MCP for manual projects in bulk
-        }
-
-        project.taskmaster = {
-          status: taskMasterStatus,
-          hasTaskmaster: taskMasterResult.hasTaskmaster,
-          hasEssentialFiles: taskMasterResult.hasEssentialFiles,
-          metadata: taskMasterResult.metadata
-        };
-      } catch (error) {
-        console.warn(`TaskMaster detection failed for manual project ${projectName}:`, error.message);
-        project.taskmaster = {
-          status: 'error',
-          hasTaskmaster: false,
-          hasEssentialFiles: false,
-          error: error.message
-        };
-      }
 
       projects.push(project);
     }
@@ -2353,7 +2291,7 @@ async function addProjectManually(projectPath, displayName = null) {
     name: projectName,
     path: absolutePath,
     fullPath: absolutePath,
-    displayName: displayName || await generateDisplayName(projectName, absolutePath),
+    displayName: displayName || generateDisplayName(projectName, absolutePath),
     isManuallyAdded: true,
     sessions: [],
     cursorSessions: []
@@ -3058,7 +2996,7 @@ async function searchConversations(query, limit = 50, onProjectResult = null, si
       const projectName = projectEntry.name;
       const projectDir = path.join(claudeDir, projectName);
       const displayName = config[projectName]?.displayName
-        || await generateDisplayName(projectName);
+        || generateDisplayName(projectName);
 
       let files;
       try {

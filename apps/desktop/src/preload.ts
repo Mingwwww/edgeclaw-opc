@@ -56,10 +56,7 @@ contextBridge.exposeInMainWorld("edgeclawOnboarding", {
     baseUrl: string;
     apiKey: string;
     model: string;
-    workspaceRoot: string;
   }): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke("onboarding:save", payload),
-  pickWorkspaceDir: (currentValue?: string): Promise<string | null> =>
-    ipcRenderer.invoke("onboarding:pickWorkspaceDir", currentValue),
   cancel: (): void => ipcRenderer.send("onboarding:cancel"),
 });

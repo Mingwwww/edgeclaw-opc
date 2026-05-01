@@ -76,21 +76,25 @@ type EdgeClawConfig = {
       projects?: Record<string, { enabled?: boolean }>;
     };
   };
+  security?: {
+    blockedPaths?: string[];
+  };
   memory?: { enabled?: boolean; model?: string; params?: Record<string, unknown> };
   router?: { enabled?: boolean } & Record<string, unknown>;
   gateway?: { enabled?: boolean; home?: string } & Record<string, unknown>;
 };
 
-type SectionId = 'runtime' | 'models' | 'agents' | 'alwaysOn' | 'memory' | 'router' | 'gateway';
+type SectionId = 'runtime' | 'models' | 'agents' | 'alwaysOn' | 'security' | 'memory' | 'router' | 'gateway';
 
 const SECTIONS: Array<{ id: SectionId; label: string; description: string }> = [
-  { id: 'runtime', label: 'Runtime',  description: 'Ports, host, timeouts, database location' },
-  { id: 'models',  label: 'Models',   description: 'Providers and named model entries' },
-  { id: 'agents',  label: 'Agents',   description: 'Main agent + subagents model bindings' },
+  { id: 'runtime',  label: 'Runtime',  description: 'Ports, host, timeouts, database location' },
+  { id: 'models',   label: 'Models',   description: 'Providers and named model entries' },
+  { id: 'agents',   label: 'Agents',   description: 'Main agent + subagents model bindings' },
   { id: 'alwaysOn', label: 'Always-On', description: 'Automatic discovery and workspace opt-in' },
-  { id: 'memory',  label: 'Memory',   description: 'EdgeClaw memory service' },
-  { id: 'router',  label: 'Router',   description: 'Claude Code Router (CCR)' },
-  { id: 'gateway', label: 'Gateway',  description: 'Messaging gateway home + channels' },
+  { id: 'security', label: 'Security', description: 'Blocked paths and access control' },
+  { id: 'memory',   label: 'Memory',   description: 'EdgeClaw memory service' },
+  { id: 'router',   label: 'Router',   description: 'Claude Code Router (CCR)' },
+  { id: 'gateway',  label: 'Gateway',  description: 'Messaging gateway home + channels' },
 ];
 
 // ── Reload-status presentation (kept identical to legacy raw view) ──────
@@ -699,6 +703,71 @@ function AlwaysOnSection({
   );
 }
 
+function SecuritySection({ config, onChange }: { config: EdgeClawConfig; onChange: (next: EdgeClawConfig) => void }) {
+  const paths = config.security?.blockedPaths ?? [];
+  const [draft, setDraft] = useState('');
+
+  const setBlockedPaths = (next: string[]) => onChange(patch(config, ['security', 'blockedPaths'], next));
+
+  const addPath = () => {
+    const trimmed = draft.trim();
+    if (!trimmed || paths.includes(trimmed)) return;
+    setBlockedPaths([...paths, trimmed]);
+    setDraft('');
+  };
+
+  const removePath = (index: number) => {
+    setBlockedPaths(paths.filter((_, i) => i !== index));
+  };
+
+  return (
+    <SettingsSection
+      title="Security"
+      description="Paths that are always blocked from workspace operations, regardless of the workspace root setting."
+    >
+      <SettingsCard>
+        <div className="space-y-3 p-4">
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+            Removing entries from this list may expose sensitive directories (SSH keys, cloud credentials, email, keychains) to plugins and MCP tools. Only modify if you understand the security implications.
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPath(); } }}
+              placeholder="~/.example or /absolute/path"
+              className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-mono text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            />
+            <button
+              type="button"
+              onClick={addPath}
+              disabled={!draft.trim()}
+              className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-40 dark:bg-neutral-200 dark:text-neutral-900 dark:hover:bg-neutral-300"
+            >
+              Add
+            </button>
+          </div>
+          {paths.length === 0 ? (
+            <p className="text-sm italic text-neutral-500">No blocked paths configured.</p>
+          ) : (
+            <ul className="space-y-1">
+              {paths.map((p, i) => (
+                <li key={`${p}-${i}`} className="flex items-center justify-between rounded-md px-3 py-1.5 font-mono text-sm odd:bg-neutral-50 dark:odd:bg-neutral-900/50">
+                  <span>{p}</span>
+                  <button type="button" onClick={() => removePath(i)} className="ml-2 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
+                    &times;
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
 function MemorySection({ config, onChange }: { config: EdgeClawConfig; onChange: (next: EdgeClawConfig) => void }) {
   const m = config.memory ?? {};
   const entryIds = Object.keys(config.models?.entries ?? {});
@@ -1027,6 +1096,7 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
                 {activeSection === 'models'  && <ModelsSection  config={parsedConfig} onChange={onFormChange} onTest={setTestTarget} />}
                 {activeSection === 'agents'  && <AgentsSection  config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'alwaysOn' && <AlwaysOnSection config={parsedConfig} projects={projects} onChange={onFormChange} />}
+                {activeSection === 'security' && <SecuritySection config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'memory'  && <MemorySection  config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'router'  && <RouterSection  config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'gateway' && <GatewaySection config={parsedConfig} onChange={onFormChange} />}

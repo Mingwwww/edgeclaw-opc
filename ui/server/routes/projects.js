@@ -21,6 +21,7 @@ import {
 } from '../services/always-on-run-history.js';
 import { getAlwaysOnRunLog } from '../services/always-on-run-logs.js';
 import { sendCronDaemonRequest } from '../services/cron-daemon-owner.js';
+import { readEdgeClawConfigFile } from '../services/edgeclawConfig.js';
 
 const router = express.Router();
 
@@ -94,6 +95,22 @@ export async function validateWorkspacePath(requestedPath) {
         return {
           valid: false,
           error: `Cannot create workspace in system directory: ${forbidden}`
+        };
+      }
+    }
+
+    // Check user-configurable blocked paths (sensitive directories)
+    const blockedPaths = readEdgeClawConfigFile().config?.security?.blockedPaths ?? [];
+    for (const blocked of blockedPaths) {
+      const expanded = blocked.startsWith('~/')
+        ? path.join(os.homedir(), blocked.slice(2))
+        : blocked;
+      const resolvedBlocked = path.resolve(expanded);
+      if (normalizedPath === resolvedBlocked ||
+          normalizedPath.startsWith(resolvedBlocked + path.sep)) {
+        return {
+          valid: false,
+          error: `Access to sensitive directory is blocked: ${blocked}`
         };
       }
     }

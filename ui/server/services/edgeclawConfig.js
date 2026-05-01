@@ -212,6 +212,19 @@ export function buildDefaultEdgeClawConfig() {
       databasePath: path.join(os.homedir(), '.cloudcli', 'auth.db'),
       workspacesRoot: os.homedir(),
     },
+    security: {
+      blockedPaths: [
+        '~/.ssh',
+        '~/.aws',
+        '~/.gnupg',
+        '~/.config/gh',
+        '~/Library/Keychains',
+        '~/Library/Mail',
+        '~/Library/Messages',
+        '~/Library/Cookies',
+        '~/Library/Application Support/AddressBook',
+      ],
+    },
     models: {
       providers: {
         edgeclaw: {

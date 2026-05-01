@@ -108,29 +108,6 @@
       -webkit-app-region: no-drag;
     }
     .key-toggle:hover { color: var(--text); background: rgba(255,255,255,0.04); }
-    .path-wrap {
-      display: flex;
-      gap: 8px;
-    }
-    .path-wrap input {
-      flex: 1;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px;
-    }
-    .path-wrap button {
-      padding: 0 14px;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-size: 12px;
-      cursor: pointer;
-      font-family: inherit;
-      -webkit-app-region: no-drag;
-      transition: border-color 0.15s;
-      white-space: nowrap;
-    }
-    .path-wrap button:hover { border-color: var(--accent); }
     .preset-row {
       display: flex;
       gap: 8px;
@@ -243,15 +220,6 @@
       <div class="hint">必须是上游实际服务的模型 ID。</div>
     </div>
 
-    <div class="row">
-      <label for="workspace-root">默认工作目录（workspace root）</label>
-      <div class="path-wrap">
-        <input id="workspace-root" type="text" placeholder="~/EdgeClaw" autocomplete="off" spellcheck="false" />
-        <button type="button" id="workspace-browse">选择…</button>
-      </div>
-      <div class="hint">EdgeClaw 只在该目录下读写文件。建议为 EdgeClaw 单独建一个目录，避免授予整个 home 的访问权。<br />留空将使用 <code>~/EdgeClaw</code>（不存在会自动创建）。</div>
-    </div>
-
     <div class="actions">
       <button type="button" class="secondary" id="quit-btn">退出</button>
       <button type="button" class="primary" id="save-btn">保存并启动</button>
@@ -289,29 +257,10 @@
     const baseEl = $("base-url");
     const keyEl = $("api-key");
     const modelEl = $("model-name");
-    const workspaceEl = $("workspace-root");
-    const workspaceBrowseBtn = $("workspace-browse");
     const statusEl = $("status");
     const saveBtn = $("save-btn");
     const quitBtn = $("quit-btn");
     const keyToggle = $("key-toggle");
-
-    // Default placeholder; main process expands ~ to homedir before writing.
-    workspaceEl.value = "~/EdgeClaw";
-
-    workspaceBrowseBtn.addEventListener("click", async () => {
-      try {
-        const picked = await window.edgeclawOnboarding.pickWorkspaceDir(
-          workspaceEl.value || undefined,
-        );
-        if (picked && typeof picked === "string") {
-          workspaceEl.value = picked;
-          workspaceEl.classList.remove("error");
-        }
-      } catch (e) {
-        showStatus(`选择目录失败：${e && e.message || String(e)}`, "error");
-      }
-    });
 
     document.querySelectorAll(".preset-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -360,7 +309,6 @@
           baseUrl: baseEl.value.trim(),
           apiKey: keyEl.value,
           model: modelEl.value.trim(),
-          workspaceRoot: workspaceEl.value.trim() || "~/EdgeClaw",
         });
         if (res && res.ok) {
           showStatus("已保存，正在启动 EdgeClaw…", "success");
