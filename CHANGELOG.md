@@ -9,6 +9,17 @@ Each version below corresponds to a `vX.Y.Z` git tag — see `apps/desktop/RELEA
 
 ---
 
+## v0.1.2 - 2026-05-01
+
+### Changed
+- 替换默认 Electron 图标为 EdgeClaw 品牌图标（黑底红蟹 `.icns`），Dock / Launchpad / About 面板均生效
+- 新增 Tray 图标素材（`trayIconTemplate @1x/2x/3x`），为后续 menu bar 常驻做准备
+
+### Docs
+- 新增 `docs/desktop-app/preferences-storage.md`：用户偏好存储设计提案
+
+---
+
 ## v0.1.1 - 2026-05-01
 
 ### Added
