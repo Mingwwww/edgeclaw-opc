@@ -9,6 +9,24 @@ Each version below corresponds to a `vX.Y.Z` git tag — see `apps/desktop/RELEA
 
 ---
 
+## v0.1.4 - 2026-05-02
+
+### Fixed
+- 侧边栏切换 tab 时重置 general session 预览状态
+- Always-On: 修复未知 cron job 状态显示、plan 文件路径展示
+- 聊天气泡长文本自动换行
+- 侧边栏关闭工作区时重置 session 预览
+
+### Added
+- Always-On: 侧边栏直接选择 general workspace，强制 workspace opt-in 发现机制
+- UI 国际化：EdgeClaw Config 设置面板全量 i18n（中/英）
+- 更新 App 图标
+
+### Changed
+- i18n SECTIONS 结构重构为 labelKey/descriptionKey 模式
+
+---
+
 ## v0.1.3 - 2026-05-02
 
 ### Fixed
