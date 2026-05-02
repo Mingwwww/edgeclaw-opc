@@ -47,8 +47,7 @@ SKIP_NOTARIZE=0
 SKIP_VERIFY=0
 KEYCHAIN_PROFILE="${NOTARIZE_KEYCHAIN_PROFILE:-EdgeClaw}"
 KEYCHAIN_PATH="${NOTARIZE_KEYCHAIN_PATH:-$HOME/Library/Keychains/login.keychain-db}"
-KEYCHAIN_ARGS=(--keychain-profile "$KEYCHAIN_PROFILE")
-[[ -f "$KEYCHAIN_PATH" ]] && KEYCHAIN_ARGS+=(--keychain "$KEYCHAIN_PATH")
+KEYCHAIN_ARGS=()  # resolved in pre-flight after probing both keychains
 
 for arg in "$@"; do
   case "$arg" in
@@ -154,10 +153,22 @@ else
 fi
 
 if [[ "$MODE" == "signed" && "$SKIP_NOTARIZE" == "0" ]]; then
-  if xcrun notarytool history "${KEYCHAIN_ARGS[@]}" >/dev/null 2>&1; then
-    ok "Notarize profile: ${KEYCHAIN_PROFILE} (keychain: $(basename "$KEYCHAIN_PATH"))"
+  # Probe keychains: prefer login.keychain-db (stable), fallback to Data
+  # Protection Keychain (iCloud Keychain — works but locks intermittently).
+  if [[ -f "$KEYCHAIN_PATH" ]] \
+     && xcrun notarytool history --keychain-profile "$KEYCHAIN_PROFILE" \
+          --keychain "$KEYCHAIN_PATH" >/dev/null 2>&1; then
+    KEYCHAIN_ARGS=(--keychain-profile "$KEYCHAIN_PROFILE" --keychain "$KEYCHAIN_PATH")
+    ok "Notarize profile: ${KEYCHAIN_PROFILE} (login.keychain-db — stable)"
+  elif xcrun notarytool history --keychain-profile "$KEYCHAIN_PROFILE" >/dev/null 2>&1; then
+    KEYCHAIN_ARGS=(--keychain-profile "$KEYCHAIN_PROFILE")
+    ok "Notarize profile: ${KEYCHAIN_PROFILE} (Data Protection Keychain — may lock)"
+    warn "For reliability, migrate credentials to login.keychain-db:"
+    warn "  xcrun notarytool store-credentials \"${KEYCHAIN_PROFILE}\" \\"
+    warn "    --apple-id <email> --team-id ${TEAM_ID:-XXXXXXXXXX} --password <app-pwd> \\"
+    warn "    --keychain ~/Library/Keychains/login.keychain-db"
   else
-    warn "Keychain profile '${KEYCHAIN_PROFILE}' not configured → skipping notarization"
+    warn "Keychain profile '${KEYCHAIN_PROFILE}' not found in any keychain → skipping notarization"
     warn "Configure with: xcrun notarytool store-credentials \"${KEYCHAIN_PROFILE}\" \\"
     warn "    --apple-id <email> --team-id ${TEAM_ID:-XXXXXXXXXX} --password <app-specific-pwd> \\"
     warn "    --keychain ~/Library/Keychains/login.keychain-db"
