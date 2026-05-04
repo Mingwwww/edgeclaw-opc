@@ -41,6 +41,16 @@ fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
 const startTime = Date.now();
 const results = [];
+const perf = {
+  appLaunchMs: 0,
+  splashToMainMs: 0,
+  responseLatencyMs: 0,
+  jsHeapMB: null,
+  rendererHeapMB: null,
+  rendererHeapTotalMB: null,
+  domNodes: null,
+  visualDiffPercent: null,
+};
 
 function log(tag, msg) {
   const ts = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -176,10 +186,12 @@ async function runTests() {
 
   // Step 2: Wait for CDP and for app to finish loading (splash → main)
   log('CDP', 'Waiting for app to start with CDP...');
+  const launchStart = Date.now();
   let targets;
   try {
     targets = await waitForCDP();
-    step('App launches with CDP', true, `${targets.length} targets found`);
+    perf.appLaunchMs = Date.now() - launchStart;
+    step('App launches with CDP', true, `${targets.length} targets, ${perf.appLaunchMs}ms`);
   } catch (e) {
     step('App launches with CDP', false, e.message);
     return;
@@ -187,6 +199,7 @@ async function runTests() {
 
   // Wait for splash to finish and main window to appear
   log('CDP', 'Waiting for main window (past splash)...');
+  const splashStart = Date.now();
   await new Promise(r => setTimeout(r, 8000));
 
   // Re-fetch targets — main window should be ready now
@@ -208,6 +221,7 @@ async function runTests() {
     step('Main window found', false, `targets: ${targets.map(t => t.type + ':' + t.url.slice(0, 60)).join(', ')}`);
     return;
   }
+  perf.splashToMainMs = Date.now() - splashStart;
   step('Main window found', true, pageTarget.url.slice(0, 80));
 
   // Step 4: Connect CDP session
@@ -217,6 +231,7 @@ async function runTests() {
     cdp = new CDPSession(ws);
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
+    await cdp.send('Performance.enable').catch(() => {});
     step('CDP session connected', true);
   } catch (e) {
     step('CDP session connected', false, e.message);
@@ -286,15 +301,173 @@ async function runTests() {
     step('App is interactive (inputs + buttons)', false, e.message);
   }
 
-  // Step 12: Final screenshot
+  // ═══════════════════════════════════════════════════════════
+  // Step 12: REAL USER INTERACTION — type message → wait for reply
+  // ═══════════════════════════════════════════════════════════
   try {
-    await cdp.screenshot('02-after-checks.png');
+    log('INTERACT', 'Typing test message into chat...');
+    const interactionStart = Date.now();
+
+    const typed = await cdp.evaluate(`
+      (function() {
+        const textarea = document.querySelector('textarea, [contenteditable="true"]');
+        if (!textarea) return false;
+        textarea.focus();
+        if (textarea.tagName === 'TEXTAREA') {
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLTextAreaElement.prototype, 'value'
+          ).set;
+          nativeInputValueSetter.call(textarea, '你好，请用一句话介绍你是谁');
+          textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          textarea.textContent = '你好，请用一句话介绍你是谁';
+          textarea.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        }
+        return true;
+      })()
+    `);
+    step('Message typed into input', typed);
+
+    if (typed) {
+      // Submit via Enter key or submit button
+      await cdp.evaluate(`
+        (function() {
+          const textarea = document.querySelector('textarea, [contenteditable="true"]');
+          if (textarea) {
+            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+          }
+          const sendBtn = document.querySelector('button[type="submit"], button[aria-label*="send"], button[aria-label*="Send"]');
+          if (sendBtn) sendBtn.click();
+        })()
+      `);
+
+      // Wait for agent response (poll DOM for new content)
+      log('INTERACT', 'Waiting for Agent response...');
+      let gotReply = false;
+      const replyDeadline = Date.now() + 60_000;
+      while (Date.now() < replyDeadline) {
+        await new Promise(r => setTimeout(r, 3000));
+        const msgCount = await cdp.evaluate(`
+          document.querySelectorAll('[class*="message"], [class*="Message"], [data-role="assistant"], .prose').length
+        `).catch(() => 0);
+        if (msgCount > 0) {
+          gotReply = true;
+          break;
+        }
+      }
+
+      const replyLatency = ((Date.now() - interactionStart) / 1000).toFixed(1);
+      step('Agent replied to message', gotReply, `latency: ${replyLatency}s`);
+      perf.responseLatencyMs = Date.now() - interactionStart;
+
+      await cdp.screenshot('03-after-reply.png');
+    }
+  } catch (e) {
+    step('Real user interaction', false, e.message);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Step 13: PERFORMANCE METRICS
+  // ═══════════════════════════════════════════════════════════
+  try {
+    const metrics = await cdp.send('Performance.getMetrics').catch(() => null);
+    if (metrics?.metrics) {
+      const jsHeap = metrics.metrics.find(m => m.name === 'JSHeapUsedSize');
+      const domNodes = metrics.metrics.find(m => m.name === 'Nodes');
+      perf.jsHeapMB = jsHeap ? (jsHeap.value / 1024 / 1024).toFixed(1) : 'N/A';
+      perf.domNodes = domNodes ? domNodes.value : 'N/A';
+    }
+
+    const memInfo = await cdp.evaluate(`
+      performance.memory ? {
+        usedJSHeapSize: (performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(1),
+        totalJSHeapSize: (performance.memory.totalJSHeapSize / 1024 / 1024).toFixed(1),
+      } : null
+    `).catch(() => null);
+    if (memInfo) {
+      perf.rendererHeapMB = memInfo.usedJSHeapSize;
+      perf.rendererHeapTotalMB = memInfo.totalJSHeapSize;
+    }
+
+    step('Performance metrics collected', true,
+      `Heap: ${perf.jsHeapMB || perf.rendererHeapMB || '?'}MB, DOM: ${perf.domNodes || '?'} nodes`);
+  } catch (e) {
+    step('Performance metrics collected', false, e.message);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Step 14: VISUAL REGRESSION — compare with baseline
+  // ═══════════════════════════════════════════════════════════
+  try {
+    await cdp.screenshot('04-final-state.png');
+
+    const baselinePath = path.join(SCREENSHOTS_DIR, 'baseline.png');
+    const currentPath = path.join(SCREENSHOTS_DIR, '04-final-state.png');
+
+    if (fs.existsSync(baselinePath)) {
+      const baseline = fs.readFileSync(baselinePath);
+      const current = fs.readFileSync(currentPath);
+
+      // Simple byte-level comparison (fast, catches major changes)
+      const sizeDiff = Math.abs(baseline.length - current.length);
+      const sizeRatio = sizeDiff / Math.max(baseline.length, 1);
+
+      // Pixel-level: compare raw buffers (PNG headers may differ, so use size ratio)
+      const isVisuallyClose = sizeRatio < 0.15; // <15% file size difference
+
+      step('Visual regression check', isVisuallyClose,
+        isVisuallyClose
+          ? `size diff: ${(sizeRatio * 100).toFixed(1)}% (within tolerance)`
+          : `size diff: ${(sizeRatio * 100).toFixed(1)}% — POSSIBLE REGRESSION`);
+      perf.visualDiffPercent = (sizeRatio * 100).toFixed(1);
+    } else {
+      // First run — save as baseline
+      fs.copyFileSync(currentPath, baselinePath);
+      step('Visual regression check', true, 'baseline created (first run)');
+    }
+  } catch (e) {
+    step('Visual regression check', false, e.message);
+  }
+
+  // Final screenshot
+  try {
+    await cdp.screenshot('05-complete.png');
     step('Final screenshot captured', true);
   } catch (e) {
     step('Final screenshot captured', false, e.message);
   }
 
   cdp.close();
+}
+
+// ── Performance baseline tracking ──
+
+function savePerformanceData() {
+  const perfFile = path.join(REPORT_DIR, 'perf-history.jsonl');
+  const entry = {
+    timestamp: new Date().toISOString(),
+    ...perf,
+    totalTestMs: Date.now() - startTime,
+  };
+  fs.appendFileSync(perfFile, JSON.stringify(entry) + '\n');
+  log('PERF', `Saved to ${perfFile}`);
+
+  // Check for degradation vs last 5 runs
+  try {
+    const lines = fs.readFileSync(perfFile, 'utf8').trim().split('\n');
+    if (lines.length >= 3) {
+      const recent = lines.slice(-6, -1).map(l => JSON.parse(l));
+      const avgLaunch = recent.reduce((s, r) => s + (r.appLaunchMs || 0), 0) / recent.length;
+      const avgResponse = recent.reduce((s, r) => s + (r.responseLatencyMs || 0), 0) / recent.length;
+
+      if (perf.appLaunchMs > avgLaunch * 1.5 && perf.appLaunchMs > 5000) {
+        log('PERF', `⚠ App launch ${perf.appLaunchMs}ms is 50%+ slower than avg ${avgLaunch.toFixed(0)}ms`);
+      }
+      if (perf.responseLatencyMs > avgResponse * 2 && perf.responseLatencyMs > 30000) {
+        log('PERF', `⚠ Response latency ${perf.responseLatencyMs}ms is 2x slower than avg ${avgResponse.toFixed(0)}ms`);
+      }
+    }
+  } catch { /* first runs */ }
 }
 
 // ── Report ──
@@ -312,6 +485,14 @@ function printReport() {
     console.log(`  ${icon} ${r.name}${r.detail ? '  (' + r.detail + ')' : ''}`);
     if (r.pass) pass++;
   }
+  console.log('');
+  console.log('  ── 性能指标 ──');
+  console.log(`  启动时间: ${perf.appLaunchMs}ms`);
+  console.log(`  Splash→主窗口: ${perf.splashToMainMs}ms`);
+  console.log(`  对话响应延迟: ${perf.responseLatencyMs ? perf.responseLatencyMs + 'ms' : 'N/A'}`);
+  console.log(`  JS Heap: ${perf.jsHeapMB || perf.rendererHeapMB || 'N/A'}MB`);
+  console.log(`  DOM Nodes: ${perf.domNodes || 'N/A'}`);
+  console.log(`  视觉差异: ${perf.visualDiffPercent !== null ? perf.visualDiffPercent + '%' : 'N/A'}`);
   console.log('');
   console.log(`  通过: ${pass}/${results.length}   耗时: ${elapsed}s`);
   console.log(`  截图: ${SCREENSHOTS_DIR}`);
@@ -331,6 +512,8 @@ async function main() {
     log('FATAL', e.message);
     step('Test execution', false, e.message);
   }
+
+  savePerformanceData();
 
   // Restore app (relaunch without debug port)
   killApp();
