@@ -23,8 +23,10 @@ git commit --amend --no-edit
 # 3. 推 commit + tag 到 origin
 git push --follow-tags
 
-# 4. 打包（脚本会校验 tag = HEAD = package.json#version）
+# 4. 打包 + 上传 GitHub Release（脚本会校验 tag = HEAD = package.json#version）
 bash scripts/release.sh --signed
+# 脚本完成后会自动创建 GitHub Release 并上传 DMG + install helper
+# 跳过上传：bash scripts/release.sh --signed --skip-publish
 ```
 
 ---

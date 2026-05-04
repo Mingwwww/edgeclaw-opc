@@ -12,11 +12,13 @@
 #   bash scripts/release.sh --skip-notarize # signed but no notarization
 #   bash scripts/release.sh --skip-build    # reuse existing claudecodeui/dist
 #   bash scripts/release.sh --skip-verify   # skip post-build verification
+#   bash scripts/release.sh --skip-publish  # skip GitHub Release upload
 #
 # Environment overrides (escape hatches — see RELEASING.md for context):
 #   ALLOW_UNTAGGED=1         # skip "git tag must match version" pre-flight check
 #                            # (only useful with --ad-hoc; signed builds should be tagged)
 #   ALLOW_NON_MAIN_SIGNED=1  # allow --signed from a non-main branch (hotfix scenarios)
+#   SKIP_PUBLISH=1           # same as --skip-publish (env override)
 # ============================================================================
 
 set -euo pipefail
@@ -45,6 +47,7 @@ MODE="auto"
 SKIP_BUILD=0
 SKIP_NOTARIZE=0
 SKIP_VERIFY=0
+SKIP_PUBLISH="${SKIP_PUBLISH:-0}"
 KEYCHAIN_PROFILE="${NOTARIZE_KEYCHAIN_PROFILE:-EdgeClaw}"
 KEYCHAIN_PATH="${NOTARIZE_KEYCHAIN_PATH:-$HOME/Library/Keychains/login.keychain-db}"
 KEYCHAIN_ARGS=()  # resolved in pre-flight after probing both keychains
@@ -56,6 +59,7 @@ for arg in "$@"; do
     --skip-build)     SKIP_BUILD=1 ;;
     --skip-notarize)  SKIP_NOTARIZE=1 ;;
     --skip-verify)    SKIP_VERIFY=1 ;;
+    --skip-publish)   SKIP_PUBLISH=1 ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $arg (use --help)" >&2; exit 2 ;;
   esac
@@ -634,3 +638,69 @@ else
   echo "  ${BLD}Notice${RST}   ad-hoc 包仅本机有效，分发请用 --signed"
 fi
 echo
+
+# ============================================================================
+# [12] Publish to GitHub Releases
+# ============================================================================
+GH_PUBLISH_OK=0
+if [[ "$SKIP_PUBLISH" == "1" ]]; then
+  info "GitHub Release upload skipped (--skip-publish)"
+elif [[ "$MODE" == "adhoc" ]]; then
+  info "GitHub Release upload skipped (ad-hoc builds are not published)"
+elif ! command -v gh &>/dev/null; then
+  warn "gh CLI not found — skipping GitHub Release upload"
+  warn "  Install: brew install gh && gh auth login"
+elif ! gh auth status &>/dev/null 2>&1; then
+  warn "gh CLI not authenticated — skipping GitHub Release upload"
+  warn "  Run: gh auth login"
+else
+  step "Publish to GitHub Releases"
+
+  GH_TAG="v${VERSION}"
+  CHANGELOG_FILE="${REPO_ROOT}/CHANGELOG.md"
+  GH_NOTES=""
+
+  # Extract release notes from CHANGELOG.md for this version
+  if [[ -f "$CHANGELOG_FILE" ]]; then
+    GH_NOTES="$(awk -v ver="## v${VERSION}" '
+      $0 ~ ver { found=1; next }
+      found && /^---$/ { exit }
+      found && /^## v/ { exit }
+      found { print }
+    ' "$CHANGELOG_FILE" | sed '/^$/{ N; /^\n$/d; }' | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
+  fi
+
+  if [[ -z "$GH_NOTES" ]]; then
+    GH_NOTES="EdgeClaw Desktop ${GH_TAG}
+
+Build: ${GIT_SHA} · ${BUILD_DATE} · branch=${GIT_BRANCH}
+Mode: ${MODE}"
+  fi
+
+  # Collect assets to upload
+  GH_ASSETS=("$DMG_OUT")
+  [[ -f "$HELPER_DST" ]]     && GH_ASSETS+=("$HELPER_DST")
+  [[ -f "$INSTALL_MD_DST" ]] && GH_ASSETS+=("$INSTALL_MD_DST")
+
+  # Create or update the release
+  if gh release view "$GH_TAG" --repo "$(git -C "$REPO_ROOT" remote get-url origin)" &>/dev/null 2>&1; then
+    info "Release ${GH_TAG} exists — uploading assets (overwrite)…"
+    gh release upload "$GH_TAG" "${GH_ASSETS[@]}" --clobber \
+      --repo "$(git -C "$REPO_ROOT" remote get-url origin)" \
+      && { ok "Assets uploaded to existing release ${GH_TAG}"; GH_PUBLISH_OK=1; } \
+      || warn "Failed to upload assets to ${GH_TAG} (non-fatal)"
+  else
+    info "Creating release ${GH_TAG}…"
+    gh release create "$GH_TAG" "${GH_ASSETS[@]}" \
+      --repo "$(git -C "$REPO_ROOT" remote get-url origin)" \
+      --title "EdgeClaw Desktop ${GH_TAG}" \
+      --notes "$GH_NOTES" \
+      && { ok "Release ${GH_TAG} created with assets"; GH_PUBLISH_OK=1; } \
+      || warn "Failed to create release ${GH_TAG} (non-fatal)"
+  fi
+
+  if [[ "$GH_PUBLISH_OK" == "1" ]]; then
+    GH_URL="$(gh release view "$GH_TAG" --repo "$(git -C "$REPO_ROOT" remote get-url origin)" --json url -q .url 2>/dev/null || true)"
+    [[ -n "$GH_URL" ]] && echo "  ${BLD}Release${RST}  ${GH_URL}"
+  fi
+fi
