@@ -9,6 +9,17 @@ Each version below corresponds to a `vX.Y.Z` git tag — see `apps/desktop/RELEA
 
 ---
 
+## v0.1.5 - 2026-05-04
+
+### Added
+- Onboarding 初始化窗口新增「测试连接」按钮，保存前自动检测网络、API 兼容性、Key 有效性
+- 测试未通过时允许二次点击强制保存（逃生口）
+
+### Fixed
+- MiniMax 预设 URL 修正为 `api.minimaxi.com/anthropic`，兼容 Token Plan API Key
+
+---
+
 ## v0.1.4 - 2026-05-02
 
 ### Fixed

@@ -17,6 +17,7 @@ import { BrowserWindow, ipcMain } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { testProviderOnboarding } from "./provider-tester";
 
 export type OnboardingResult = "saved" | "cancelled";
 
@@ -102,7 +103,7 @@ export function showOnboardingWindow(opts: {
   return new Promise((resolve) => {
     const win = new BrowserWindow({
       width: 580,
-      height: 640,
+      height: 760,
       resizable: false,
       minimizable: false,
       maximizable: false,
@@ -122,6 +123,7 @@ export function showOnboardingWindow(opts: {
       if (settled) return;
       settled = true;
       ipcMain.removeHandler("onboarding:save");
+      ipcMain.removeHandler("onboarding:testProvider");
       ipcMain.removeAllListeners("onboarding:cancel");
       if (!win.isDestroyed()) win.close();
       resolve(result);
@@ -135,6 +137,21 @@ export function showOnboardingWindow(opts: {
           setTimeout(() => finish("saved"), 200);
         }
         return res;
+      },
+    );
+
+    ipcMain.handle(
+      "onboarding:testProvider",
+      async (
+        _e,
+        payload: { providerType: string; baseUrl: string; apiKey: string; model: string },
+      ) => {
+        return testProviderOnboarding({
+          type: payload.providerType,
+          baseUrl: payload.baseUrl,
+          apiKey: payload.apiKey,
+          model: payload.model,
+        });
       },
     );
 

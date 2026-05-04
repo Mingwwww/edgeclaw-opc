@@ -177,6 +177,89 @@
     .status.error { color: var(--error); }
     .status.info { color: var(--text-dim); }
     .status.success { color: var(--success); }
+
+    .test-results {
+      margin-top: 12px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 12px;
+      display: none;
+    }
+    .test-results.visible { display: block; }
+    .test-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .test-row:last-child { border-bottom: 0; }
+    .test-icon {
+      flex-shrink: 0;
+      width: 16px;
+      text-align: center;
+      line-height: 1.4;
+    }
+    .test-label {
+      flex-shrink: 0;
+      width: 64px;
+      color: var(--text-dim);
+    }
+    .test-detail {
+      flex: 1;
+      word-break: break-word;
+    }
+    .test-hint {
+      margin-top: 2px;
+      color: var(--text-dim);
+      font-size: 11px;
+    }
+    .level-ok .test-icon { color: var(--success); }
+    .level-warning .test-icon { color: #f59e0b; }
+    .level-error .test-icon { color: var(--error); }
+    .level-skipped .test-icon { color: var(--text-dim); }
+    .test-summary {
+      padding: 8px 12px;
+      font-weight: 500;
+      border-bottom: 1px solid var(--border);
+    }
+    .test-summary.overall-ok { color: var(--success); }
+    .test-summary.overall-warning { color: #f59e0b; }
+    .test-summary.overall-error { color: var(--error); }
+    button.test-btn {
+      padding: 10px 16px;
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    button.test-btn:hover { background: rgba(79,156,255,0.08); }
+    button.test-btn:disabled {
+      border-color: var(--border);
+      color: var(--text-dim);
+      cursor: not-allowed;
+      background: transparent;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--text-dim);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
   </style>
 </head>
 <body>
@@ -222,10 +305,12 @@
 
     <div class="actions">
       <button type="button" class="secondary" id="quit-btn">退出</button>
+      <button type="button" class="test-btn" id="test-btn">测试连接</button>
       <button type="button" class="primary" id="save-btn">保存并启动</button>
     </div>
 
     <div class="status info" id="status"></div>
+    <div class="test-results" id="test-results"></div>
   </div>
 
   <script>
@@ -242,7 +327,7 @@
       },
       minimax: {
         type: "anthropic",
-        baseUrl: "https://api.minimaxi.com",
+        baseUrl: "https://api.minimaxi.com/anthropic",
         model: "MiniMax-M2.7-highspeed",
       },
       openai: {
@@ -259,8 +344,12 @@
     const modelEl = $("model-name");
     const statusEl = $("status");
     const saveBtn = $("save-btn");
+    const testBtn = $("test-btn");
     const quitBtn = $("quit-btn");
     const keyToggle = $("key-toggle");
+    const testResultsEl = $("test-results");
+
+    let lastTestPassed = false;
 
     document.querySelectorAll(".preset-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -271,9 +360,15 @@
         modelEl.value = p.model;
         baseEl.classList.remove("error");
         modelEl.classList.remove("error");
+        lastTestPassed = false;
+        hideTestResults();
         showStatus(`已套用 ${btn.textContent} 预设，请填入 API Key。`, "info");
         keyEl.focus();
       });
+    });
+
+    [typeEl, baseEl, keyEl, modelEl].forEach((el) => {
+      el.addEventListener("input", () => { lastTestPassed = false; });
     });
 
     keyToggle.addEventListener("click", () => {
@@ -287,6 +382,35 @@
       statusEl.className = `status ${kind || "info"}`;
     }
 
+    function hideTestResults() {
+      testResultsEl.classList.remove("visible");
+      testResultsEl.innerHTML = "";
+    }
+
+    const LEVEL_ICONS = { ok: "\u2713", warning: "\u26A0", error: "\u2717", skipped: "\u2014" };
+    const OVERALL_LABELS = { ok: "全部通过", warning: "有警告，但可用", error: "存在错误" };
+
+    function renderTestResults(result) {
+      let html = `<div class="test-summary overall-${result.overall}">${OVERALL_LABELS[result.overall] || result.overall}</div>`;
+      for (const c of result.checks) {
+        html += `<div class="test-row level-${c.level}">`;
+        html += `<span class="test-icon">${LEVEL_ICONS[c.level] || "?"}</span>`;
+        html += `<span class="test-label">${esc(c.label)}</span>`;
+        html += `<span class="test-detail">${esc(c.detail)}`;
+        if (c.hint) html += `<div class="test-hint">${esc(c.hint)}</div>`;
+        if (c.durationMs != null) html += `<div class="test-hint">${c.durationMs}ms</div>`;
+        html += `</span></div>`;
+      }
+      testResultsEl.innerHTML = html;
+      testResultsEl.classList.add("visible");
+    }
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
     function validate() {
       let ok = true;
       [baseEl, keyEl, modelEl].forEach((el) => el.classList.remove("error"));
@@ -296,28 +420,82 @@
       return ok;
     }
 
+    function getPayload() {
+      return {
+        providerType: typeEl.value,
+        baseUrl: baseEl.value.trim(),
+        apiKey: keyEl.value,
+        model: modelEl.value.trim(),
+      };
+    }
+
+    async function runTest() {
+      if (!validate()) {
+        showStatus("请先填写所有字段。", "error");
+        return null;
+      }
+      testBtn.disabled = true;
+      saveBtn.disabled = true;
+      hideTestResults();
+      statusEl.innerHTML = '<span class="spinner"></span>正在测试连接…';
+      statusEl.className = "status info";
+      try {
+        const result = await window.edgeclawOnboarding.testProvider(getPayload());
+        renderTestResults(result);
+        if (result.overall === "ok") {
+          lastTestPassed = true;
+          showStatus("测试通过！", "success");
+        } else if (result.overall === "warning") {
+          lastTestPassed = true;
+          showStatus("有警告但可继续使用。", "info");
+        } else {
+          lastTestPassed = false;
+          showStatus("测试未通过，请检查配置。", "error");
+        }
+        return result;
+      } catch (e) {
+        lastTestPassed = false;
+        showStatus(`测试失败：${e && e.message || String(e)}`, "error");
+        return null;
+      } finally {
+        testBtn.disabled = false;
+        saveBtn.disabled = false;
+      }
+    }
+
+    testBtn.addEventListener("click", runTest);
+
     saveBtn.addEventListener("click", async () => {
       if (!validate()) {
         showStatus("请填写所有字段。", "error");
         return;
       }
+
+      if (!lastTestPassed) {
+        const result = await runTest();
+        if (!result) return;
+        if (result.overall === "error") {
+          showStatus("测试未通过。如仍要保存，请再次点击「保存并启动」。", "error");
+          lastTestPassed = true;
+          return;
+        }
+      }
+
       saveBtn.disabled = true;
+      testBtn.disabled = true;
       showStatus("正在保存配置…", "info");
       try {
-        const res = await window.edgeclawOnboarding.save({
-          providerType: typeEl.value,
-          baseUrl: baseEl.value.trim(),
-          apiKey: keyEl.value,
-          model: modelEl.value.trim(),
-        });
+        const res = await window.edgeclawOnboarding.save(getPayload());
         if (res && res.ok) {
           showStatus("已保存，正在启动 EdgeClaw…", "success");
         } else {
           saveBtn.disabled = false;
+          testBtn.disabled = false;
           showStatus(`保存失败：${(res && res.error) || "未知错误"}`, "error");
         }
       } catch (e) {
         saveBtn.disabled = false;
+        testBtn.disabled = false;
         showStatus(`保存失败：${e && e.message || String(e)}`, "error");
       }
     });

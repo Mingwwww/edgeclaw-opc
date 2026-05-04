@@ -58,5 +58,22 @@ contextBridge.exposeInMainWorld("edgeclawOnboarding", {
     model: string;
   }): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke("onboarding:save", payload),
+  testProvider: (payload: {
+    providerType: string;
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+  }): Promise<{
+    endpoint: string;
+    overall: "ok" | "warning" | "error" | "skipped";
+    checks: Array<{
+      id: string;
+      label: string;
+      level: "ok" | "warning" | "error" | "skipped";
+      detail: string;
+      hint?: string;
+      durationMs?: number;
+    }>;
+  }> => ipcRenderer.invoke("onboarding:testProvider", payload),
   cancel: (): void => ipcRenderer.send("onboarding:cancel"),
 });
