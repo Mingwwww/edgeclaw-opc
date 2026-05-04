@@ -1,0 +1,47 @@
+name: XHS E2E Smoke Test
+
+on:
+  push:
+    branches: [release, main]
+  pull_request:
+    branches: [release, main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Test mode (smoke / full / auto)'
+        required: false
+        default: 'smoke'
+
+jobs:
+  e2e-smoke:
+    name: XHS E2E (${{ github.event.inputs.mode || 'smoke' }})
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 15
+    env:
+      EDGECLAW_UI_PORT: "3001"
+      PROXY_PORT: "18080"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (fnm)
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          eval "$(fnm env)"
+          fnm use 22 || fnm install 22
+          echo "$(fnm exec --using=22 node -e 'console.log(require("path").dirname(process.execPath))')" >> $GITHUB_PATH
+
+      - name: Setup Bun
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
+          bun --version
+
+      - name: Install UI dependencies
+        run: cd ui && npm install --prefer-offline
+        timeout-minutes: 5
+
+      - name: Run E2E test
+        run: bash scripts/ci-e2e.sh ${{ github.event.inputs.mode || 'smoke' }}
+        timeout-minutes: 12
