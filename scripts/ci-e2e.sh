@@ -89,22 +89,44 @@ else
   fi
 fi
 
-echo
-echo "[ci] Running XHS E2E test (${MODE})..."
-echo
-
 export EDGECLAW_ROOT="$REPO_ROOT"
 export EDGECLAW_UI_PORT="$UI_PORT"
 export EDGECLAW_ENV_PATH="$REPO_ROOT/claude-code-main/.env"
 
+# ── Phase 1: Mac App GUI Test ──
+echo
+echo "[ci] Phase 1: Mac App GUI Test..."
+echo
+
+GUI_EXIT=0
+if [[ -f "/Applications/EdgeClaw.app/Contents/MacOS/EdgeClaw" ]]; then
+  node "$REPO_ROOT/scripts/ci-gui-test.mjs" || GUI_EXIT=$?
+else
+  echo "[ci] ⚠ EdgeClaw.app not installed, skipping GUI test"
+fi
+
+# ── Phase 2: XHS E2E Agent Test ──
+echo
+echo "[ci] Phase 2: XHS E2E Agent Test (${MODE})..."
+echo
+
 node "$REPO_ROOT/.cursor/skills/test-xhs-e2e/run-test.mjs" "$MODE"
-EXIT_CODE=$?
+AGENT_EXIT=$?
+
+# Combine results
+EXIT_CODE=0
+[[ $GUI_EXIT -ne 0 ]] && EXIT_CODE=1
+[[ $AGENT_EXIT -ne 0 ]] && EXIT_CODE=1
 
 echo
+echo "════════════════════════════════════════"
 if [[ $EXIT_CODE -eq 0 ]]; then
-  echo "[ci] ✅ E2E test PASSED"
+  echo "  ✅ ALL TESTS PASSED"
 else
-  echo "[ci] ❌ E2E test FAILED (exit code: $EXIT_CODE)"
+  echo "  ❌ SOME TESTS FAILED"
+  [[ $GUI_EXIT -ne 0 ]]   && echo "     GUI: FAIL (exit $GUI_EXIT)"
+  [[ $AGENT_EXIT -ne 0 ]] && echo "     Agent: FAIL (exit $AGENT_EXIT)"
 fi
+echo "════════════════════════════════════════"
 
 exit $EXIT_CODE
