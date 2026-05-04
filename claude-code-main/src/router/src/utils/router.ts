@@ -175,19 +175,22 @@ const getUseModel = async (
         req.log.info(`[TokenSaver] subagent policy=skip → using default model`);
         return { model: Router?.default, scenarioType: 'tokenSaver' };
       }
-      if (policy === "inherit" && req.sessionId) {
+      if (policy === "judge") {
+        req.log.info(`[TokenSaver] subagent policy=judge → running LLM classification`);
+        // fall through to judge classification below
+      } else if (policy === "inherit" && req.sessionId) {
         const sticky = getSessionState(req.sessionId);
         if (sticky?.stickyModel) {
           req.tokenSaverTier = sticky.stickyTier;
           req.log.info(`[TokenSaver] subagent policy=inherit → tier=${sticky.stickyTier} model=${sticky.stickyModel}`);
           return { model: sticky.stickyModel, scenarioType: 'tokenSaver' };
         }
-      }
-      if (policy === "fixed" && tokenSaverConfig.subagentModel) {
+        // no sticky yet → fall through to judge
+      } else if (policy === "fixed" && tokenSaverConfig.subagentModel) {
         req.log.info(`[TokenSaver] subagent policy=fixed → model=${tokenSaverConfig.subagentModel}`);
         return { model: tokenSaverConfig.subagentModel, scenarioType: 'tokenSaver' };
       }
-      // policy=inherit with no sticky, or unknown policy → fall through to judge
+      // unknown policy or fallback → fall through to judge
     }
 
     // Main agent (or subagent fallthrough): run LLM judge classification
@@ -308,14 +311,12 @@ const BUILTIN_ORCHESTRATE_PROMPT = `# SYSTEM OVERRIDE — ORCHESTRATOR MODE
 1. **Do NOT generate final deliverables yourself** (code, docs, configs) — output is produced by sub-agents
 2. **Do NOT start work without delegating via the Agent tool** — all real work must go through Agent()
 3. **Do NOT call tools beyond what is listed in the "Allowed" section below**
+4. **Do NOT spawn read-only or status-check agents** — NEVER call Agent() just to "check progress", "verify results", "monitor status", or "diagnose issues". Use your own allowed tools (Read, ls, cat) for these.
+5. **Do NOT spawn follow-up agents for the same step** — if a step fails, retry it ONCE with a more specific prompt, then move on or report failure.
 
 ## Your only workflow
 
-Receive task → Present decomposition plan (plain text, no tool calls) → Agent() spawn first sub-agent → Stop and wait → Result received → review → spawn next → All done → summarize to user
-
-## First reply after receiving a task
-
-**Must be a plain-text task decomposition plan — no tool calls.** Then immediately spawn the first sub-agent via Agent().
+Receive task → Present decomposition plan AND call Agent() in the SAME response → Stop and wait → Result received → review → call Agent() for the next step → All done → summarize to user
 
 ## Agent() usage
 
@@ -323,13 +324,26 @@ Agent({ description: "<short 3-5 word label>", prompt: "<self-contained, complet
 
 Prompt rules (sub-agents cannot see your context):
 - Include all file paths, URLs, and format requirements
+- **Include a concrete execution strategy** — tell the sub-agent HOW to do the work, not just WHAT to do
 - If the workspace contains relevant skill files, tell the sub-agent the path so it can read them
 - If the task depends on a previous step's output, specify file paths and content structure
 - One task per Agent() call
 
-## After spawning
+## After calling Agent()
 
-**Stop immediately.** Do nothing else. The sub-agent's result will be returned to you automatically.
+Agent() is a **blocking tool call**. The workflow is:
+1. You call Agent() — you receive an initial "launched" confirmation
+2. The sub-agent runs and completes its work
+3. You receive the **final result** as a follow-up message
+
+**CRITICAL**: The "Async agent launched successfully" message is NOT the final result.
+You MUST continue the conversation and wait for the sub-agent's completed output.
+NEVER end your turn with only a "launched/started" status — that means NO work was done.
+
+When you receive the completed result:
+- Review it for correctness
+- Call Agent() for the next step, OR
+- Summarize if all steps are done
 
 ## Allowed direct actions (only these)
 
