@@ -1067,8 +1067,14 @@ async function abortClaudeSDKSession(sessionId) {
   try {
     console.log(`Aborting SDK session: ${sessionId}`);
 
-    // Call interrupt() on the query instance
-    await session.instance.interrupt();
+    // interrupt() signals the SDK to stop at the next opportunity, but during
+    // agentic runs (subagent tool execution) it may not take effect until the
+    // tool completes.  Follow up with close() which forcefully terminates the
+    // underlying CLI subprocess and all its children.
+    await session.instance.interrupt().catch(() => {});
+    if (typeof session.instance.close === 'function') {
+      session.instance.close();
+    }
 
     // Update session status
     session.status = 'aborted';

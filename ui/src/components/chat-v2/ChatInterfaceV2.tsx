@@ -231,9 +231,14 @@ function ChatInterfaceV2({
       projectPath: selectedProject.fullPath || selectedProject.path || '',
       ...sessionRequestParams,
     });
-    // Don't blindly clear loading state here — the backend may still be
-    // processing. The next `session-status` or `check-session-status`
-    // response will set the correct loading/abort state.
+
+    // Ask the backend whether the session is still processing so the
+    // loading indicator and Stop button reflect reality after reconnect.
+    sendMessage({
+      type: 'check-session-status',
+      sessionId: selectedSession.id,
+      provider: (selectedSession.__provider || providerVal) as string,
+    });
   }, [
     selectedProject,
     selectedSession,
@@ -242,6 +247,7 @@ function ChatInterfaceV2({
     streamTimerRef,
     accumulatedStreamRef,
     streamBufferRef,
+    sendMessage,
   ]);
 
   useChatRealtimeHandlers({
