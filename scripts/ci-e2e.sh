@@ -28,12 +28,10 @@ UI_PORT="${EDGECLAW_UI_PORT:-3001}"
 PROXY_PORT="${PROXY_PORT:-18080}"
 
 UI_PID=""
-PROXY_PID=""
 
 cleanup() {
   echo "[ci] Cleaning up..."
-  [[ -n "$UI_PID" ]]    && kill "$UI_PID" 2>/dev/null && echo "[ci] UI server stopped"
-  [[ -n "$PROXY_PID" ]] && kill "$PROXY_PID" 2>/dev/null && echo "[ci] Proxy stopped"
+  [[ -n "$UI_PID" ]] && kill "$UI_PID" 2>/dev/null && echo "[ci] UI server stopped"
   wait 2>/dev/null
 }
 trap cleanup EXIT
@@ -59,36 +57,14 @@ echo "  ✓ config.yaml exists"
 [[ -d "$REPO_ROOT/ui/node_modules" ]] || { echo "ERROR: ui/node_modules missing — run npm install in ui/"; exit 1; }
 echo "  ✓ ui/node_modules present"
 
+[[ -d "$REPO_ROOT/claude-code-main/node_modules" ]] || { echo "ERROR: claude-code-main/node_modules missing — run bun install"; exit 1; }
+echo "  ✓ claude-code-main/node_modules present"
+
 [[ -d "/Applications/Google Chrome.app" ]] && echo "  ✓ Chrome installed" || echo "  ⚠ Chrome missing (headless screenshot will fail)"
 
 echo
 
-# ── Start proxy ──
-if curl -s "http://127.0.0.1:${PROXY_PORT}/health" >/dev/null 2>&1; then
-  echo "[ci] Proxy already running on :${PROXY_PORT}"
-else
-  echo "[ci] Starting proxy (bun run proxy.ts)..."
-  cd "$REPO_ROOT/claude-code-main"
-  PROXY_PORT="$PROXY_PORT" bun run proxy.ts > /tmp/ci-proxy.log 2>&1 &
-  PROXY_PID=$!
-  cd "$REPO_ROOT"
-
-  for i in $(seq 1 30); do
-    if curl -s "http://127.0.0.1:${PROXY_PORT}/health" >/dev/null 2>&1; then
-      echo "[ci] Proxy ready (attempt $i)"
-      break
-    fi
-    sleep 1
-  done
-
-  if ! curl -s "http://127.0.0.1:${PROXY_PORT}/health" >/dev/null 2>&1; then
-    echo "ERROR: Proxy failed to start. Log:"
-    cat /tmp/ci-proxy.log 2>/dev/null || true
-    exit 1
-  fi
-fi
-
-# ── Start UI server ──
+# ── Start UI server (it auto-starts embedded proxy) ──
 if curl -s "http://127.0.0.1:${UI_PORT}/health" >/dev/null 2>&1; then
   echo "[ci] UI server already running on :${UI_PORT}"
 else
