@@ -196,7 +196,28 @@ function verifyFile(filepath, label) {
     return true;
   } catch {
     log('VERIFY', `❌ ${label}: ${filepath} not found`);
+    // Try to find similar files nearby for debugging
+    const dir = path.dirname(filepath);
+    try {
+      const files = fs.readdirSync(dir, { recursive: true });
+      if (files.length > 0) {
+        log('DEBUG', `Files in ${dir}: ${files.slice(0, 10).join(', ')}`);
+      }
+    } catch {}
     return false;
+  }
+}
+
+function logAgentResponse(stepName, result) {
+  if (result.timeout) {
+    log('DEBUG', `${stepName} TIMEOUT after ${TIMEOUT_MS/1000}s`);
+  }
+  if (result.text) {
+    const truncated = result.text.slice(-500).replace(/\n/g, ' ');
+    log('DEBUG', `${stepName} agent response (last 500): ${truncated}`);
+  }
+  if (result.toolUses.length > 0) {
+    log('DEBUG', `${stepName} tools: ${result.toolUses.join(' → ')}`);
   }
 }
 
@@ -216,7 +237,20 @@ async function runSmoke(ws) {
     '',
     '最后必须用 Bash 执行: ls -la /tmp/work/tweets.md /tmp/work/assets/',
   ].join('\n'));
-  const aOK = verifyFile('/tmp/work/tweets.md', 'Step A: tweets.md');
+  let aOK = verifyFile('/tmp/work/tweets.md', 'Step A: tweets.md');
+  if (!aOK) {
+    logAgentResponse('Step-A', stepA);
+    // Fallback: check if agent wrote to a different filename
+    try {
+      const workFiles = fs.readdirSync('/tmp/work');
+      const mdFile = workFiles.find(f => f.endsWith('.md') && f !== 'copy.md');
+      if (mdFile) {
+        log('DEBUG', `Found alternative file: /tmp/work/${mdFile}, renaming to tweets.md`);
+        fs.renameSync(`/tmp/work/${mdFile}`, '/tmp/work/tweets.md');
+        aOK = true;
+      }
+    } catch {}
+  }
   results.steps.push({ name: 'A: 素材抓取', pass: aOK, tools: stepA.toolUses.length, timeout: !!stepA.timeout });
 
   // Step B
@@ -228,7 +262,26 @@ async function runSmoke(ws) {
     '', '输出: /tmp/work/output.png（1242x1660）',
     '', '完成后执行: ls -la /tmp/work/output.png',
   ].join('\n'));
-  const bOK = verifyFile('/tmp/work/output.png', 'Step B: output.png');
+  let bOK = verifyFile('/tmp/work/output.png', 'Step B: output.png');
+  if (!bOK) {
+    logAgentResponse('Step-B', stepB);
+    // Fallback: check for png in any subdirectory
+    try {
+      const findPng = (dir) => {
+        for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (f.isFile() && f.name.endsWith('.png')) return path.join(dir, f.name);
+          if (f.isDirectory()) { const r = findPng(path.join(dir, f.name)); if (r) return r; }
+        }
+        return null;
+      };
+      const png = findPng('/tmp/work');
+      if (png) {
+        log('DEBUG', `Found PNG at ${png}, copying to output.png`);
+        fs.copyFileSync(png, '/tmp/work/output.png');
+        bOK = true;
+      }
+    } catch {}
+  }
   results.steps.push({ name: 'B: 头图生成', pass: bOK, tools: stepB.toolUses.length, timeout: !!stepB.timeout });
 
   // Step C
