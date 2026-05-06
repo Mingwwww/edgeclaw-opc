@@ -146,8 +146,10 @@ const getUseModel = async (
   const providers = configService.get<any[]>("providers") || [];
   const Router = projectSpecificRouter || configService.get("Router");
 
-  // 1. Direct provider,model specification always bypasses everything
-  if (req.body.model.includes(",")) {
+  // 1. Direct provider,model specification bypasses routing —
+  //    BUT when Token-Saver is enabled, let it classify so AutoOrchestrate can trigger.
+  const tokenSaverConfig = Router?.tokenSaver as TokenSaverConfig | undefined;
+  if (req.body.model.includes(",") && !tokenSaverConfig?.enabled) {
     const [provider, model] = req.body.model.split(",");
     const finalProvider = providers.find(
       (p: any) => p.name.toLowerCase() === provider
@@ -162,7 +164,6 @@ const getUseModel = async (
   }
 
   // 2. Token-Saver: when enabled, fully takes over routing (user query + subagent)
-  const tokenSaverConfig = Router?.tokenSaver as TokenSaverConfig | undefined;
   if (tokenSaverConfig?.enabled && providerService) {
     const isSubagent = detectAndCleanSubagentTag(req);
 
@@ -175,19 +176,35 @@ const getUseModel = async (
         req.log.info(`[TokenSaver] subagent policy=skip → using default model`);
         return { model: Router?.default, scenarioType: 'tokenSaver' };
       }
-      if (policy === "inherit" && req.sessionId) {
+      if (policy === "judge") {
+        if (req.sessionId) {
+          const subKey = `${req.sessionId}:sub`;
+          const msgCount = req.body.messages?.length ?? 0;
+
+          if (msgCount > 1) {
+            const sticky = getSessionState(subKey);
+            if (sticky?.stickyModel) {
+              req.tokenSaverTier = sticky.stickyTier;
+              req.log.info(`[TokenSaver] subagent sticky hit → tier=${sticky.stickyTier} model=${sticky.stickyModel} (msgs=${msgCount})`);
+              return { model: sticky.stickyModel, scenarioType: 'tokenSaver' };
+            }
+          }
+          req.log.info(`[TokenSaver] subagent policy=judge → new sub-agent (msgs=${msgCount}), running LLM classification`);
+        }
+        // fall through to judge classification below
+      } else if (policy === "inherit" && req.sessionId) {
         const sticky = getSessionState(req.sessionId);
         if (sticky?.stickyModel) {
           req.tokenSaverTier = sticky.stickyTier;
           req.log.info(`[TokenSaver] subagent policy=inherit → tier=${sticky.stickyTier} model=${sticky.stickyModel}`);
           return { model: sticky.stickyModel, scenarioType: 'tokenSaver' };
         }
-      }
-      if (policy === "fixed" && tokenSaverConfig.subagentModel) {
+        // no sticky yet → fall through to judge
+      } else if (policy === "fixed" && tokenSaverConfig.subagentModel) {
         req.log.info(`[TokenSaver] subagent policy=fixed → model=${tokenSaverConfig.subagentModel}`);
         return { model: tokenSaverConfig.subagentModel, scenarioType: 'tokenSaver' };
       }
-      // policy=inherit with no sticky, or unknown policy → fall through to judge
+      // unknown policy or fallback → fall through to judge
     }
 
     // Main agent (or subagent fallthrough): run LLM judge classification
@@ -199,7 +216,8 @@ const getUseModel = async (
         req.tokenSaverTier = result.tier;
         req.isSubagent = isSubagent;
         if (req.sessionId) {
-          updateSessionState(req.sessionId, result.tier, result.model);
+          const storeKey = isSubagent ? `${req.sessionId}:sub` : req.sessionId;
+          updateSessionState(storeKey, result.tier, result.model);
         }
         req.log.info(`[TokenSaver] tier=${result.tier} model=${result.model} subagent=${isSubagent}`);
         return { model: result.model, scenarioType: 'tokenSaver' };
@@ -213,7 +231,8 @@ const getUseModel = async (
       req.tokenSaverTier = fallbackTier;
       req.isSubagent = isSubagent;
       if (req.sessionId) {
-        updateSessionState(req.sessionId, fallbackTier, fallbackTarget.model);
+        const storeKey = isSubagent ? `${req.sessionId}:sub` : req.sessionId;
+        updateSessionState(storeKey, fallbackTier, fallbackTarget.model);
       }
       req.log.info(`[TokenSaver] fallback tier=${fallbackTier} model=${fallbackTarget.model}`);
       return { model: fallbackTarget.model, scenarioType: 'tokenSaver' };
@@ -308,33 +327,57 @@ const BUILTIN_ORCHESTRATE_PROMPT = `# SYSTEM OVERRIDE — ORCHESTRATOR MODE
 1. **Do NOT generate final deliverables yourself** (code, docs, configs) — output is produced by sub-agents
 2. **Do NOT start work without delegating via the Agent tool** — all real work must go through Agent()
 3. **Do NOT call tools beyond what is listed in the "Allowed" section below**
+4. **Do NOT spawn read-only or status-check agents** — NEVER call Agent() just to "check progress", "verify results", "monitor status", or "diagnose issues". Use your own allowed tools (Read, ls, cat) for these.
+5. **Do NOT spawn follow-up agents for the same step** — if a step fails, retry it ONCE with a more specific prompt, then move on or report failure.
 
 ## Your only workflow
 
-Receive task → Present decomposition plan (plain text, no tool calls) → Agent() spawn first sub-agent → Stop and wait → Result received → review → spawn next → All done → summarize to user
-
-## First reply after receiving a task
-
-**Must be a plain-text task decomposition plan — no tool calls.** Then immediately spawn the first sub-agent via Agent().
+Receive task → Present decomposition plan AND call Agent() in the SAME response → Stop and wait → Result received → review → call Agent() for the next step → All done → summarize to user
 
 ## Agent() usage
 
 Agent({ description: "<short 3-5 word label>", prompt: "<self-contained, complete task description>" })
 
+**CRITICAL: Do NOT pass \`model\`, \`isolation\`, or any parameter other than \`description\` and \`prompt\`.** The system automatically selects the optimal model and environment.
+
 Prompt rules (sub-agents cannot see your context):
 - Include all file paths, URLs, and format requirements
+- **Include a concrete execution strategy** — tell the sub-agent HOW to do the work, not just WHAT to do
 - If the workspace contains relevant skill files, tell the sub-agent the path so it can read them
 - If the task depends on a previous step's output, specify file paths and content structure
 - One task per Agent() call
 
-## After spawning
+## After calling Agent()
 
-**Stop immediately.** Do nothing else. The sub-agent's result will be returned to you automatically.
+Agent() is a **blocking tool call**. The workflow is:
+1. You call Agent() — you receive an initial "launched" confirmation
+2. The sub-agent runs and completes its work
+3. You receive the **final result** as a follow-up message
+
+**CRITICAL**: The "Async agent launched successfully" message is NOT the final result.
+You MUST continue the conversation and wait for the sub-agent's completed output.
+NEVER end your turn with only a "launched/started" status — that means NO work was done.
+
+When you receive the completed result:
+- **Verify output** using your allowed tools (Read, ls, cat) — check that files exist and content looks correct
+- If output has obvious errors or is incomplete, spawn ONE refinement agent with specific fix instructions
+- Call Agent() for the next step, OR
+- Summarize if all steps are done
+
+## Refinement pass (important!)
+
+After ALL steps are complete, do a **final verification** before summarizing:
+1. Use Read / cat to inspect the key output files
+2. Check for obvious issues: missing files, empty content, wrong format, logical errors
+3. If issues are found, spawn ONE final Agent() with precise fix instructions referencing the specific problems
+4. Only summarize after verification passes
+
+This refinement step is critical for quality — sub-agents work in isolated worktrees and may miss cross-step dependencies or produce subtly wrong results.
 
 ## Allowed direct actions (only these)
 
-- Read (confirm output files exist)
-- Shell commands limited to: ls, cat, head, mkdir, cp (file checks)
+- Read (inspect and verify output files)
+- Shell commands limited to: ls, cat, head, tail, wc, grep, mkdir, cp (file inspection)
 - Present plans and progress to the user`;
 
 function loadOrchestratePrompt(skillPath?: string): string {
@@ -532,14 +575,52 @@ export const router = async (req: any, _res: any, context: RouterContext) => {
               `[AutoOrchestrate] slimmed system prompt: ${originalBlocks} blocks (~${Math.round(originalTokensEstimate / 4)} tokens) → ${req.body.system.length} blocks (~${Math.round(newTokensEstimate / 4)} tokens), saved ~${Math.round(savedChars / 4)} tokens${preservedBlocks.length > 0 ? `, preserved ${preservedBlocks.length} memory block(s)` : ""}`
             );
           }
-        } else if (autoOrch.mainAgentModel) {
-          // Sub-agents in an orchestrated session: override model to mainAgentModel
-          // so they don't get routed to cheaper models by tokenSaver classification.
-          req.body.model = autoOrch.mainAgentModel;
-          req.log.info(`[AutoOrchestrate] sub-agent model overridden to ${autoOrch.mainAgentModel}`);
+        } else {
+          // Sub-agents in an orchestrated session: let Token-Saver classification
+          // decide the model (SIMPLE/MEDIUM → cheap, COMPLEX/REASONING → powerful).
+          // Previously this forced mainAgentModel on all sub-agents, wasting budget.
+          req.log.info(`[AutoOrchestrate] sub-agent request, model decided by Token-Saver: ${req.body.model}`);
         }
       }
     }
+
+    // Rewrite "Async agent launched" tool_result for non-Claude models.
+    // Non-Claude orchestrators (e.g. gpt-5.x) treat this as a final result and
+    // stop their turn ("fire and forget"). Replacing it with a directive that
+    // demands a follow-up tool call keeps the agentic loop alive.
+    const autoOrchConfig = routerConfig?.autoOrchestrate as AutoOrchestrateConfig | undefined;
+    if (
+      autoOrchConfig?.enabled &&
+      req.body.model &&
+      !req.body.model.includes("claude") &&
+      Array.isArray(req.body.messages)
+    ) {
+      for (const msg of req.body.messages) {
+        if (msg.role === "user" && Array.isArray(msg.content)) {
+          for (const block of msg.content) {
+            if (block.type === "tool_result" && Array.isArray(block.content)) {
+              for (const part of block.content) {
+                if (
+                  part.type === "text" &&
+                  part.text &&
+                  part.text.includes("Async agent launched")
+                ) {
+                  part.text =
+                    "AGENT RESULT PENDING. The sub-agent is executing and will return its output shortly. " +
+                    "While waiting, you MUST call a tool to keep the session alive. " +
+                    "Use: ls /tmp_workspace/results/ to check progress. " +
+                    "IMPORTANT: If you respond with ONLY text and no tool call, the session will TERMINATE immediately and all work will be lost.";
+                  req.log.info(
+                    "[AutoOrchestrate] rewrote Async-agent-launched tool_result for non-Claude model"
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Debug dump — write the final request body to /tmp/ccr-debug/ for inspection
     if (process.env.CCR_DEBUG_DUMP) {
       try {

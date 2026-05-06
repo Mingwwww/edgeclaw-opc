@@ -17,6 +17,8 @@ import { ProviderService } from "./services/provider";
 import { TransformerService } from "./services/transformer";
 import { TokenizerService } from "./services/tokenizer";
 
+const ZERO_USAGE_MAX_RETRIES = 5;
+
 export interface PipelineServices {
   configService: ConfigService;
   providerService: ProviderService;
@@ -130,7 +132,7 @@ export async function processRequest(
       body, provider, transformer, req.headers, { req }
     );
 
-    // Phase 5: Send to real provider via realFetch
+    // Phase 5: Send to real provider via realFetch (with zero-usage retry)
     const providerUrl = config.url || new URL(provider.baseUrl);
 
     if (bypass && typeof transformer.auth === "function") {
@@ -155,21 +157,51 @@ export async function processRequest(
       }
     }
 
-    const response = await sendUnifiedRequest(
-      providerUrl,
-      bypass ? requestBody : requestBody,
-      {
+    // Strip Anthropic-specific parameters that non-Anthropic providers reject,
+    // but inject reasoning_effort for OpenAI reasoning models (gpt-5.x, o3, o4).
+    if (!requestBody.model?.startsWith("claude")) {
+      delete requestBody.thinking;
+      delete requestBody.enable_thinking;
+      delete requestBody.metadata;
+
+      const model = requestBody.model ?? "";
+      if (model.includes("gpt-5") || model.includes("o3") || model.includes("o4")) {
+        requestBody.reasoning_effort = requestBody.reasoning_effort || "low";
+        log.info(`[CCR] injected reasoning_effort=low for ${model}`);
+      }
+      delete requestBody.reasoning;
+    }
+
+    const sendArgs = {
+      url: providerUrl,
+      body: bypass ? requestBody : requestBody,
+      config: {
         httpsProxy: configService.getHttpsProxy(),
         ...config,
         headers: JSON.parse(JSON.stringify(requestHeaders)),
       },
-      { req },
-      log
-    );
+      context: { req },
+    };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      log.error(`[provider_response_error] ${provider.name},${requestBody.model}: ${response.status}: ${errorText}`);
+    let response: Response | undefined;
+    for (let _zRetry = 0; _zRetry <= ZERO_USAGE_MAX_RETRIES; _zRetry++) {
+      response = await sendUnifiedRequest(sendArgs.url, sendArgs.body, sendArgs.config, sendArgs.context, log);
+
+      if (!response.ok) break;
+
+      const zeroCheck = await detectZeroUsageResponse(response, body.stream === true);
+      if (zeroCheck.isZero && _zRetry < ZERO_USAGE_MAX_RETRIES) {
+        log.warn(`[ZeroUsageRetry] attempt ${_zRetry + 1}/${ZERO_USAGE_MAX_RETRIES}: ` +
+          `upstream returned 0 tokens with content, retrying (provider=${provider.name}, model=${requestBody.model})`);
+        continue;
+      }
+      if (zeroCheck.replayed) response = zeroCheck.replayed;
+      break;
+    }
+
+    if (!response!.ok) {
+      const errorText = await response!.text();
+      log.error(`[provider_response_error] ${provider.name},${requestBody.model}: ${response!.status}: ${errorText}`);
 
       // Try fallback
       const fallbackResponse = await handlePipelineFallback(
@@ -177,12 +209,12 @@ export async function processRequest(
       );
       if (fallbackResponse) return fallbackResponse;
 
-      return new Response(errorText, { status: response.status, headers: { "Content-Type": "application/json" } });
+      return new Response(errorText, { status: response!.status, headers: { "Content-Type": "application/json" } });
     }
 
     // Phase 6: Response transformer chain
     const finalResponse = await pipelineProcessResponseTransformers(
-      requestBody, response, provider, transformer, bypass, { req }
+      requestBody, response!, provider, transformer, bypass, { req }
     );
 
     // Phase 7: Stats collection
@@ -401,6 +433,91 @@ function extractQuerySnippet(body: any, isSubagent?: boolean): string | undefine
   }
 }
 
+function dumpResponseUsage(
+  meta: { sessionId: string; provider: string; model: string; tier?: string; isSubagent?: boolean },
+  usage: Record<string, unknown>,
+) {
+  if (!process.env.CCR_DEBUG_DUMP) return;
+  try {
+    const fs = require("fs");
+    const dir = "/tmp/ccr-debug";
+    fs.mkdirSync(dir, { recursive: true });
+    const tag = meta.isSubagent ? "sub" : "main";
+    const sess = meta.sessionId ? meta.sessionId.slice(0, 8) : "nosess";
+    const fname = `${dir}/${Date.now()}-${sess}-${tag}-resp-usage.json`;
+    fs.writeFileSync(fname, JSON.stringify({ ...meta, usage }, null, 2));
+  } catch {}
+}
+
+/**
+ * Detect upstream responses that return HTTP 200 with valid content but zero
+ * token usage — a sign of a proxy returning a bogus/cached placeholder.
+ * For streaming, the body is fully buffered and replayed as a new Response.
+ */
+async function detectZeroUsageResponse(
+  response: Response,
+  isStream: boolean
+): Promise<{ isZero: boolean; replayed?: Response }> {
+  if (isStream && response.body) {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    const decoder = new TextDecoder();
+    let hasContent = false;
+    let promptTokens: number | null = null;
+    let completionTokens: number | null = null;
+    let partial = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      partial += decoder.decode(value, { stream: true });
+      const lines = partial.split("\n");
+      partial = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(payload);
+          if (parsed.choices?.[0]?.delta?.content) hasContent = true;
+          if (parsed.usage != null) {
+            promptTokens = parsed.usage.prompt_tokens ?? null;
+            completionTokens = parsed.usage.completion_tokens ?? null;
+          }
+        } catch {}
+      }
+    }
+
+    const isZero = hasContent && promptTokens === 0 && completionTokens === 0;
+
+    const replayed = new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const c of chunks) controller.enqueue(c);
+          controller.close();
+        },
+      }),
+      { status: response.status, headers: response.headers }
+    );
+
+    return { isZero, replayed };
+  }
+
+  const cloned = response.clone();
+  try {
+    const json = await cloned.json();
+    const hasContent = !!json.choices?.[0]?.message?.content;
+    const isZero =
+      hasContent &&
+      json.usage?.prompt_tokens === 0 &&
+      json.usage?.completion_tokens === 0;
+    return { isZero };
+  } catch {
+    return { isZero: false };
+  }
+}
+
 function collectStats(req: any, body: any, response: Response) {
   const collector = getGlobalStatsCollector();
   if (!collector) return;
@@ -414,6 +531,7 @@ function collectStats(req: any, body: any, response: Response) {
   const isSubagent = req.isSubagent as boolean | undefined;
   const model = body.model || "unknown";
   const querySnippet = extractQuerySnippet(body, isSubagent);
+  const meta = { sessionId, provider, model, tier, isSubagent };
 
   if (body.stream === true && response.body) {
     const [originalStream, statsStream] = response.body.tee();
@@ -438,6 +556,7 @@ function collectStats(req: any, body: any, response: Response) {
                 cacheRead: u.cache_read_input_tokens,
               },
             });
+            dumpResponseUsage(meta, u);
             break;
           }
         }
@@ -463,6 +582,7 @@ function collectStats(req: any, body: any, response: Response) {
             cacheRead: json.usage.cache_read_input_tokens,
           },
         });
+        dumpResponseUsage(meta, json.usage);
       }
     }).catch(() => {});
   }

@@ -153,12 +153,15 @@ if (shouldInstallCcrInterceptor()) {
           providerService: server.providerService,
           transformerService: server.transformerService,
           tokenizerService: server.tokenizerService,
-          logger: process.env.CCR_LOG === '1' ? undefined : {
-            info: () => {},
-            warn: (...a: any[]) => console.warn('[CCR]', ...a),
-            error: (...a: any[]) => console.error('[CCR]', ...a),
-            debug: () => {},
-          },
+          logger: process.env.CCR_LOG === '1'
+            ? { info: (...a: any[]) => console.log('[CCR]', ...a),
+                warn: (...a: any[]) => console.warn('[CCR]', ...a),
+                error: (...a: any[]) => console.error('[CCR]', ...a),
+                debug: () => {} }
+            : { info: () => {},
+                warn: (...a: any[]) => console.warn('[CCR]', ...a),
+                error: (...a: any[]) => console.error('[CCR]', ...a),
+                debug: () => {} },
         });
 
         process.env.ANTHROPIC_BASE_URL = CCR_SENTINEL;

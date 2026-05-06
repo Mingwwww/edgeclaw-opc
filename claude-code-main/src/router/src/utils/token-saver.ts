@@ -9,7 +9,7 @@ export interface TokenSaverConfig {
   tiers: Record<string, TierTarget>;
   defaultTier?: string;
   rules?: string[];
-  subagentPolicy?: "skip" | "inherit" | "fixed";
+  subagentPolicy?: "skip" | "judge" | "inherit" | "fixed";
   subagentModel?: string;
 }
 
@@ -38,11 +38,7 @@ export function generateJudgePrompt(
     })
     .join("\n");
 
-  const defaultRules = [
-    "When unsure, pick the LOWER tier (save tokens).",
-    "Short prompts (< 20 words) with no technical depth → the lowest tier.",
-  ];
-  const allRules = [...defaultRules, ...(rules ?? [])];
+  const allRules = rules ?? [];
   const rulesBlock = allRules.map((r) => `- ${r}`).join("\n");
 
   const tierList = tierNames.join("|");
@@ -105,6 +101,7 @@ export function extractLastUserMessage(messages: any[]): string {
 // ── Sub-agent detection ──
 
 export function detectAndCleanSubagentTag(req: any): boolean {
+  // Method 1: ClawXRouter-style explicit tag in system prompt
   if (
     req.body?.system?.length > 1 &&
     req.body.system[1]?.text?.startsWith("<CCR-SUBAGENT-MODEL>")
@@ -114,6 +111,14 @@ export function detectAndCleanSubagentTag(req: any): boolean {
       "",
     );
     return true;
+  }
+  // Method 2: Claude Code — sub-agents lack the Agent tool
+  const tools = req.body?.tools;
+  if (Array.isArray(tools) && tools.length > 0) {
+    const hasAgentTool = tools.some(
+      (t: any) => (t.name || t.function?.name) === "Agent"
+    );
+    if (!hasAgentTool) return true;
   }
   return false;
 }
@@ -145,7 +150,7 @@ async function callJudge(
         { role: "user", content: prompt },
       ],
       temperature: 0,
-      max_tokens: 64,
+      max_tokens: 256,
     }),
   };
 
