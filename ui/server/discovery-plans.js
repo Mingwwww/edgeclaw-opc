@@ -16,6 +16,10 @@ import {
   appendAlwaysOnRunLogEvent,
   formatAlwaysOnPlanLogLine
 } from './services/always-on-run-logs.js';
+import {
+  prepareAlwaysOnExecutionWorkspace,
+  writeExecutionArtifacts,
+} from './services/always-on-mirror.js';
 
 const ALWAYS_ON_DISCOVERY_INDEX_VERSION = 1;
 const ALWAYS_ON_DISCOVERY_STRUCTURE_VERSION = 1;
@@ -24,11 +28,15 @@ const DISCOVERY_CONTEXT_MAX_ITEMS = 8;
 const DISCOVERY_PLAN_STATUS_ORDER = {
   running: 0,
   queued: 1,
-  ready: 2,
-  failed: 3,
-  completed: 4,
-  draft: 5,
-  superseded: 6
+  apply_pending: 2,
+  apply_queued: 3,
+  apply_running: 4,
+  apply_failed: 5,
+  ready: 6,
+  failed: 7,
+  completed: 8,
+  draft: 9,
+  superseded: 10
 };
 const EMPTY_DISCOVERY_PLAN_STORE = {
   version: ALWAYS_ON_DISCOVERY_INDEX_VERSION,
@@ -49,6 +57,11 @@ function getDiscoveryPlanMarkdownDirectory(projectRoot) {
 
 function getRelativePlanMarkdownPath(planId) {
   return path.join('.claude', 'always-on', 'plans', `${planId}.md`);
+}
+
+function isInvalidPlanMarkdownPath(value) {
+  const normalized = normalizeString(value).replace(/\\/g, '/');
+  return !normalized || normalized === '.claude/always-on/plans/.md';
 }
 
 function toTimestampValue(value) {
@@ -133,25 +146,40 @@ function normalizeDiscoveryPlanRecord(record) {
 
   const fallbackId = `plan-${randomUUID().slice(0, 8)}`;
   const id = normalizeString(record?.id, fallbackId);
+  const planFilePath = isInvalidPlanMarkdownPath(record?.planFilePath)
+    ? getRelativePlanMarkdownPath(id)
+    : normalizeString(record?.planFilePath, getRelativePlanMarkdownPath(id));
 
   return {
     id,
     title: normalizeString(record?.title, 'Untitled discovery plan'),
     createdAt: toIsoTimestamp(record?.createdAt) || now,
     updatedAt: toIsoTimestamp(record?.updatedAt) || now,
-    approvalMode: record?.approvalMode === 'auto' ? 'auto' : 'manual',
     status: normalizeString(record?.status, 'ready'),
     summary: normalizeString(record?.summary),
     rationale: normalizeString(record?.rationale),
     dedupeKey: normalizeString(record?.dedupeKey, id),
     sourceDiscoverySessionId: normalizeString(record?.sourceDiscoverySessionId),
     executionSessionId: normalizeString(record?.executionSessionId),
+    executionRunId: normalizeString(record?.executionRunId),
+    executionQueuedAt: toIsoTimestamp(record?.executionQueuedAt),
     executionStartedAt: toIsoTimestamp(record?.executionStartedAt),
     executionLastActivityAt: toIsoTimestamp(record?.executionLastActivityAt),
     executionStatus: normalizeString(record?.executionStatus),
+    executionFailureReason: normalizeString(record?.executionFailureReason),
+    executionWorkspaceKind: normalizeString(record?.executionWorkspaceKind),
+    executionWorkspacePath: normalizeString(record?.executionWorkspacePath),
+    executionRunDir: normalizeString(record?.executionRunDir),
+    mirrorStrategy: record?.mirrorStrategy && typeof record.mirrorStrategy === 'object'
+      ? record.mirrorStrategy
+      : undefined,
+    applyStatus: normalizeString(record?.applyStatus),
+    reportFilePath: normalizeString(record?.reportFilePath),
+    changesPatchPath: normalizeString(record?.changesPatchPath),
+    fileOpsPath: normalizeString(record?.fileOpsPath),
     latestSummary: normalizeString(record?.latestSummary),
     contextRefs,
-    planFilePath: normalizeString(record?.planFilePath, getRelativePlanMarkdownPath(id)),
+    planFilePath,
     structureVersion:
       typeof record?.structureVersion === 'number'
         ? record.structureVersion
@@ -197,6 +225,39 @@ async function writeDiscoveryPlanStore(projectRoot, store) {
   );
 }
 
+function getDiscoveryPlanLocksDir(projectRoot) {
+  return path.join(getAlwaysOnRoot(projectRoot), 'locks');
+}
+
+function getDiscoveryPlanLockPath(projectRoot, planId) {
+  const safePlanId = normalizeString(planId, 'unknown').replace(/[^a-zA-Z0-9._:-]/g, '-');
+  return path.join(getDiscoveryPlanLocksDir(projectRoot), `plan-${safePlanId}.lock`);
+}
+
+async function withPlanExecutionLock(projectRoot, planId, callback) {
+  await fs.mkdir(getDiscoveryPlanLocksDir(projectRoot), { recursive: true });
+  const lockPath = getDiscoveryPlanLockPath(projectRoot, planId);
+  let handle;
+  try {
+    handle = await fs.open(lockPath, 'wx');
+    await handle.writeFile(`${process.pid}\n${new Date().toISOString()}\n`, 'utf8');
+  } catch (error) {
+    if (error?.code === 'EEXIST') {
+      const lockError = new Error('Discovery plan is already being queued or running');
+      lockError.code = 'ALREADY_RUNNING';
+      throw lockError;
+    }
+    throw error;
+  }
+
+  try {
+    return await callback();
+  } finally {
+    await handle?.close().catch(() => null);
+    await fs.rm(lockPath, { force: true }).catch(() => null);
+  }
+}
+
 async function readDiscoveryPlanBody(projectRoot, planFilePath) {
   const absolutePath = path.resolve(projectRoot, planFilePath);
   try {
@@ -219,6 +280,9 @@ function summarizeSession(session) {
 function computeExecutionStatus(plan, session) {
   if (plan.status === 'superseded') {
     return '';
+  }
+  if (plan.status === 'apply_pending' || plan.status === 'apply_queued' || plan.status === 'apply_running' || plan.status === 'apply_failed') {
+    return plan.status;
   }
 
   if (plan.executionSessionId && isClaudeSDKSessionActive(plan.executionSessionId)) {
@@ -430,7 +494,6 @@ function buildExistingPlanContextItem(plan) {
     id: plan.id,
     title: plan.title,
     status: plan.status,
-    approvalMode: plan.approvalMode,
     updatedAt: plan.updatedAt,
     summary: truncateText(plan.summary, 180)
   };
@@ -526,17 +589,32 @@ export async function getProjectDiscoveryPlansOverview(projectName) {
   };
 }
 
-function buildDiscoveryPlanExecutionPrompt(plan, planContent, projectName) {
+function buildDiscoveryPlanExecutionPrompt(plan, planContent, projectName, executionContext = {}) {
+  const runDir = normalizeString(executionContext.runDir);
+  const executionRoot = normalizeString(executionContext.executionRoot);
+  const workspaceKind = normalizeString(executionContext.workspaceKind);
   return [
     `Always-On execution for project "${projectName}".`,
     '',
-    'This plan is already approved.',
-    'Execute the work directly.',
+    'This plan is ready for isolated execution.',
+    'Execute the work directly in the isolated execution workspace.',
     'Do not enter Plan Mode.',
     'Do not create a second mini-plan before acting.',
+    'Do not apply changes back to the source workspace. Leave the source workspace untouched.',
+    'When finished, summarize the work clearly; Always-On will write the review artifacts and wait for user approval before apply.',
     '',
     `Plan ID: ${plan.id}`,
     `Plan file: ${plan.planFilePath}`,
+    `Execution workspace kind: ${workspaceKind}`,
+    `Execution workspace path: ${executionRoot}`,
+    `Run artifacts directory: ${runDir}`,
+    '',
+    workspaceKind === 'snapshot-git-mirror'
+      ? 'This execution workspace is a git-initialized snapshot of the source workspace current files. It has an Always-On baseline commit and branch; do not write back to the source workspace.'
+      : '',
+    workspaceKind === 'mirror'
+      ? 'For non-git mirrors, inspect the workspace scan and mirror strategy artifacts in the run directory. If deeper inspection changes your assessment, update mirror-strategy.json with strict JSON using only strategy "copy-on-write" or "full-copy"; do not move execution out of the prepared workspace.'
+      : '',
     '',
     'Approved plan:',
     '',
@@ -552,87 +630,214 @@ export async function queueDiscoveryPlanExecution(projectName, planId, { source 
     throw error;
   }
 
-  const { projectRoot, store, index, plan } = match;
-  if (plan.status === 'superseded') {
-    const error = new Error('Superseded discovery plans cannot be executed');
-    error.code = 'INVALID_STATE';
-    throw error;
-  }
+  const { projectRoot } = match;
+  return await withPlanExecutionLock(projectRoot, planId, async () => {
+    const lockedMatch = await findProjectDiscoveryPlan(projectName, planId);
+    if (!lockedMatch) {
+      const error = new Error('Discovery plan not found');
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
 
-  const executionStatus = computeExecutionStatus(plan, null);
-  if (executionStatus === 'running' || executionStatus === 'queued') {
-    const error = new Error('Discovery plan is already queued or running');
-    error.code = 'ALREADY_RUNNING';
-    throw error;
-  }
+    const { store, index, plan } = lockedMatch;
+    if (plan.status === 'superseded') {
+      const error = new Error('Superseded discovery plans cannot be executed');
+      error.code = 'INVALID_STATE';
+      throw error;
+    }
+    if (plan.status !== 'ready') {
+      const alreadyRunning = plan.status === 'queued' || plan.status === 'running';
+      const error = new Error(
+        alreadyRunning
+          ? 'Discovery plan is already queued or running'
+          : 'Discovery plan is not ready for execution',
+      );
+      error.code = alreadyRunning ? 'ALREADY_RUNNING' : 'INVALID_STATE';
+      throw error;
+    }
 
-  const content = await readDiscoveryPlanBody(projectRoot, plan.planFilePath);
-  if (!normalizeString(content)) {
-    const error = new Error('Discovery plan content is missing');
-    error.code = 'MISSING_PLAN_BODY';
-    throw error;
-  }
+    const content = await readDiscoveryPlanBody(projectRoot, plan.planFilePath);
+    if (!normalizeString(content)) {
+      const error = new Error('Discovery plan content is missing');
+      error.code = 'MISSING_PLAN_BODY';
+      throw error;
+    }
 
-  const now = new Date().toISOString();
-  const executionToken = randomUUID();
-  const updatedPlan = {
-    ...plan,
-    status: 'queued',
-    executionStatus: 'queued',
-    executionSessionId: '',
-    executionStartedAt: '',
-    executionLastActivityAt: '',
-    latestSummary: '',
-    updatedAt: now,
-    lastExecutionSource: source
-  };
-  store.plans[index] = updatedPlan;
-  await writeDiscoveryPlanStore(projectRoot, store);
-  await appendAlwaysOnRunEvent(projectRoot, {
-    runId: executionToken,
-    kind: 'plan',
-    sourceId: updatedPlan.id,
-    title: updatedPlan.title,
-    status: 'queued',
-    timestamp: now,
-    startedAt: now,
-    metadata: {
-      planId: updatedPlan.id,
-      planFilePath: updatedPlan.planFilePath,
-      source,
-    },
-  });
-  await appendAlwaysOnRunLog(projectRoot, executionToken, [
-    formatAlwaysOnPlanLogLine({
-      timestamp: now,
+    const now = new Date().toISOString();
+    const executionToken = randomUUID();
+    const queuedPlan = {
+      ...plan,
+      status: 'queued',
+      executionStatus: 'queued',
+      executionRunId: executionToken,
+      executionQueuedAt: now,
+      executionSessionId: '',
+      executionStartedAt: '',
+      executionLastActivityAt: '',
+      executionWorkspaceKind: '',
+      executionWorkspacePath: '',
+      executionRunDir: '',
+      executionFailureReason: '',
+      mirrorStrategy: undefined,
+      applyStatus: '',
+      reportFilePath: '',
+      changesPatchPath: '',
+      fileOpsPath: '',
+      latestSummary: '',
+      updatedAt: now,
+      lastExecutionSource: source,
+    };
+    store.plans[index] = queuedPlan;
+    await writeDiscoveryPlanStore(projectRoot, store);
+    await appendAlwaysOnRunEvent(projectRoot, {
       runId: executionToken,
+      kind: 'plan',
+      sourceId: queuedPlan.id,
+      title: queuedPlan.title,
+      status: 'queued',
+      timestamp: now,
+      startedAt: now,
+      metadata: {
+        planId: queuedPlan.id,
+        planFilePath: queuedPlan.planFilePath,
+        source,
+      },
+    });
+    await appendAlwaysOnRunLog(projectRoot, executionToken, [
+      formatAlwaysOnPlanLogLine({
+        timestamp: now,
+        runId: executionToken,
+        planId: queuedPlan.id,
+        phase: 'queued',
+        message: `Queued plan "${queuedPlan.title}" from ${source}`,
+      }),
+      formatAlwaysOnPlanLogLine({
+        timestamp: now,
+        runId: executionToken,
+        planId: queuedPlan.id,
+        phase: 'plan_file',
+        message: `Plan file: ${queuedPlan.planFilePath}`,
+      }),
+    ]);
+
+    let executionWorkspace;
+    try {
+      executionWorkspace = await prepareAlwaysOnExecutionWorkspace(projectRoot, executionToken, content);
+    } catch (error) {
+      const failedAt = new Date().toISOString();
+      const failureReason = error instanceof Error && error.message.trim()
+        ? error.message.trim()
+        : 'Failed to prepare Always-On execution workspace.';
+      const failedPlan = {
+        ...queuedPlan,
+        status: 'failed',
+        executionStatus: 'failed',
+        executionLastActivityAt: failedAt,
+        executionFailureReason: failureReason,
+        latestSummary: failureReason,
+        updatedAt: failedAt,
+      };
+      store.plans[index] = failedPlan;
+      await writeDiscoveryPlanStore(projectRoot, store);
+      await appendAlwaysOnRunEvent(projectRoot, {
+        runId: executionToken,
+        kind: 'plan',
+        sourceId: failedPlan.id,
+        title: failedPlan.title,
+        status: 'failed',
+        timestamp: failedAt,
+        startedAt: now,
+        finishedAt: failedAt,
+        error: failureReason,
+        metadata: {
+          planId: failedPlan.id,
+          planFilePath: failedPlan.planFilePath,
+          source,
+        },
+      });
+      await appendAlwaysOnRunLog(projectRoot, executionToken, [
+        formatAlwaysOnPlanLogLine({
+          timestamp: failedAt,
+          level: 'error',
+          runId: executionToken,
+          planId: failedPlan.id,
+          phase: 'failed',
+          message: failureReason,
+        }),
+      ]);
+      await appendAlwaysOnRunLogEvent(projectRoot, executionToken, {
+        kind: 'plan',
+        planId: failedPlan.id,
+        phase: 'failed',
+        status: 'failed',
+        error: failureReason,
+      });
+
+      const executionError = new Error(failureReason);
+      executionError.code = 'EXECUTION_PREP_FAILED';
+      throw executionError;
+    }
+
+    const preparedAt = new Date().toISOString();
+    const updatedPlan = {
+      ...queuedPlan,
+      executionWorkspaceKind: executionWorkspace.workspaceKind,
+      executionWorkspacePath: executionWorkspace.executionRoot,
+      executionRunDir: executionWorkspace.runDir,
+      mirrorStrategy: executionWorkspace.mirrorStrategy,
+      updatedAt: preparedAt,
+    };
+    store.plans[index] = updatedPlan;
+    await writeDiscoveryPlanStore(projectRoot, store);
+    await appendAlwaysOnRunEvent(projectRoot, {
+      runId: executionToken,
+      kind: 'plan',
+      sourceId: updatedPlan.id,
+      title: updatedPlan.title,
+      status: 'queued',
+      timestamp: preparedAt,
+      startedAt: now,
+      metadata: {
+        planId: updatedPlan.id,
+        planFilePath: updatedPlan.planFilePath,
+        source,
+        executionWorkspaceKind: updatedPlan.executionWorkspaceKind,
+        executionWorkspacePath: updatedPlan.executionWorkspacePath,
+        executionRunDir: updatedPlan.executionRunDir,
+      },
+    });
+    await appendAlwaysOnRunLog(projectRoot, executionToken, [
+      formatAlwaysOnPlanLogLine({
+        timestamp: preparedAt,
+        runId: executionToken,
+        planId: updatedPlan.id,
+        phase: 'execution_workspace',
+        message: `Execution workspace: ${updatedPlan.executionWorkspaceKind} at ${updatedPlan.executionWorkspacePath}`,
+      }),
+    ]);
+    await appendAlwaysOnRunLogEvent(projectRoot, executionToken, {
+      kind: 'plan',
       planId: updatedPlan.id,
       phase: 'queued',
-      message: `Queued plan "${updatedPlan.title}" from ${source}`,
-    }),
-    formatAlwaysOnPlanLogLine({
-      timestamp: now,
-      runId: executionToken,
-      planId: updatedPlan.id,
-      phase: 'plan_file',
-      message: `Plan file: ${updatedPlan.planFilePath}`,
-    }),
-  ]);
-  await appendAlwaysOnRunLogEvent(projectRoot, executionToken, {
-    kind: 'plan',
-    planId: updatedPlan.id,
-    phase: 'queued',
-    status: 'queued',
-    source,
-    planFilePath: updatedPlan.planFilePath,
-  });
+      status: 'queued',
+      source,
+      planFilePath: updatedPlan.planFilePath,
+      executionWorkspaceKind: updatedPlan.executionWorkspaceKind,
+      executionWorkspacePath: updatedPlan.executionWorkspacePath,
+    });
 
-  return {
-    plan: buildDiscoveryPlanOverview(updatedPlan, content, null),
-    sessionSummary: `Always-On: ${updatedPlan.title}`,
-    command: buildDiscoveryPlanExecutionPrompt(updatedPlan, content, projectName),
-    executionToken
-  };
+    return {
+      plan: buildDiscoveryPlanOverview(updatedPlan, content, null),
+      sessionSummary: `Always-On: ${updatedPlan.title}`,
+      command: buildDiscoveryPlanExecutionPrompt(updatedPlan, content, projectName, executionWorkspace),
+      executionToken,
+      executionWorkspace: {
+        kind: updatedPlan.executionWorkspaceKind,
+        path: updatedPlan.executionWorkspacePath,
+        runDir: updatedPlan.executionRunDir,
+      },
+    };
+  });
 }
 
 export async function updateProjectDiscoveryPlanExecution(projectName, planId, updates = {}) {
@@ -645,23 +850,37 @@ export async function updateProjectDiscoveryPlanExecution(projectName, planId, u
 
   const { projectRoot, store, index, plan } = match;
   const now = new Date().toISOString();
+  const requestedStatus = normalizeString(updates.status);
+  const isCompletedUpdate = requestedStatus === 'completed';
+  const artifactResult = isCompletedUpdate && normalizeString(plan.executionWorkspacePath)
+    ? await writeExecutionArtifacts(
+        projectRoot,
+        normalizeString(updates.executionToken, plan.executionSessionId || plan.id),
+        plan.executionWorkspacePath,
+        normalizeString(updates.latestSummary, plan.latestSummary),
+      ).catch(() => null)
+    : null;
+  const planStatus = isCompletedUpdate ? 'apply_pending' : requestedStatus;
+  const executionStatus = isCompletedUpdate ? 'completed' : normalizeString(updates.status, plan.executionStatus);
+
   const nextPlan = {
     ...plan,
     executionSessionId: normalizeString(updates.executionSessionId, plan.executionSessionId),
     executionStartedAt: updates.executionStartedAt
       ? toIsoTimestamp(updates.executionStartedAt)
-      : (normalizeString(updates.status) === 'running' && !plan.executionStartedAt
+      : (requestedStatus === 'running' && !plan.executionStartedAt
           ? now
           : plan.executionStartedAt),
     executionLastActivityAt: updates.executionLastActivityAt
       ? toIsoTimestamp(updates.executionLastActivityAt)
       : now,
-    executionStatus: normalizeString(updates.status, plan.executionStatus),
+    executionStatus,
     latestSummary: normalizeString(updates.latestSummary, plan.latestSummary),
-    status:
-      normalizeString(updates.status)
-        ? normalizeString(updates.status)
-        : plan.status,
+    status: planStatus || plan.status,
+    applyStatus: isCompletedUpdate ? 'pending' : plan.applyStatus,
+    reportFilePath: artifactResult?.reportFilePath || plan.reportFilePath,
+    changesPatchPath: artifactResult?.changesPatchPath || plan.changesPatchPath,
+    fileOpsPath: artifactResult?.fileOpsPath || plan.fileOpsPath,
     updatedAt: now
   };
 
@@ -671,7 +890,9 @@ export async function updateProjectDiscoveryPlanExecution(projectName, planId, u
     updates.executionToken,
     nextPlan.executionSessionId || plan.executionSessionId || nextPlan.id
   );
-  const normalizedStatus = normalizeString(updates.status, nextPlan.executionStatus || nextPlan.status);
+  const normalizedStatus = isCompletedUpdate
+    ? 'completed'
+    : normalizeString(updates.status, nextPlan.executionStatus || nextPlan.status);
   if (executionRunId && normalizedStatus) {
     await appendAlwaysOnRunEvent(projectRoot, {
       runId: executionRunId,
@@ -687,6 +908,13 @@ export async function updateProjectDiscoveryPlanExecution(projectName, planId, u
       metadata: {
         planId: nextPlan.id,
         planFilePath: nextPlan.planFilePath,
+        executionWorkspaceKind: nextPlan.executionWorkspaceKind,
+        executionWorkspacePath: nextPlan.executionWorkspacePath,
+        executionRunDir: nextPlan.executionRunDir,
+        applyStatus: nextPlan.applyStatus,
+        reportFilePath: nextPlan.reportFilePath,
+        changesPatchPath: nextPlan.changesPatchPath,
+        fileOpsPath: nextPlan.fileOpsPath,
       },
     });
     await appendAlwaysOnRunLog(projectRoot, executionRunId, [
@@ -707,6 +935,15 @@ export async function updateProjectDiscoveryPlanExecution(projectName, planId, u
             message: nextPlan.latestSummary,
           })
         : '',
+      isCompletedUpdate
+        ? formatAlwaysOnPlanLogLine({
+            timestamp: now,
+            runId: executionRunId,
+            planId: nextPlan.id,
+            phase: 'apply_pending',
+            message: 'Execution completed in the isolated workspace. Waiting for user approval before applying to the source workspace.',
+          })
+        : '',
     ].filter(Boolean));
     await appendAlwaysOnRunLogEvent(projectRoot, executionRunId, {
       kind: 'plan',
@@ -714,11 +951,85 @@ export async function updateProjectDiscoveryPlanExecution(projectName, planId, u
       phase: normalizedStatus,
       status: normalizedStatus,
       sessionId: nextPlan.executionSessionId,
+      applyStatus: nextPlan.applyStatus,
+      reportFilePath: nextPlan.reportFilePath,
+      changesPatchPath: nextPlan.changesPatchPath,
+      fileOpsPath: nextPlan.fileOpsPath,
     });
   }
 
   const content = await readDiscoveryPlanBody(projectRoot, nextPlan.planFilePath);
   return buildDiscoveryPlanOverview(nextPlan, content, null);
+}
+
+export async function queueDiscoveryPlanApply(projectName, planId, { runId = '', userInstructions = '' } = {}) {
+  const match = await findProjectDiscoveryPlan(projectName, planId);
+  if (!match) {
+    const error = new Error('Discovery plan not found');
+    error.code = 'NOT_FOUND';
+    throw error;
+  }
+
+  const { projectRoot, store, index, plan } = match;
+  if (plan.status !== 'apply_pending') {
+    const error = new Error('Discovery plan is not waiting for apply');
+    error.code = 'INVALID_STATE';
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const applyRunId = `apply-${randomUUID()}`;
+  const targetRunId = normalizeString(runId, plan.executionSessionId || plan.id);
+  const nextPlan = {
+    ...plan,
+    status: 'apply_queued',
+    applyStatus: 'queued',
+    updatedAt: now,
+  };
+  store.plans[index] = nextPlan;
+  await writeDiscoveryPlanStore(projectRoot, store);
+
+  const command = [
+    `Always-On apply for project "${projectName}".`,
+    '',
+    'You are applying a completed Always-On isolated execution back to the source workspace.',
+    'Do not rerun the original task from scratch.',
+    'Read the plan, report, changes patch, file operations, and mirror manifest before editing.',
+    'If the source workspace has changed, preserve the user changes and perform a semantic merge.',
+    'Stop and report apply_needs_review for high-risk binary replacements, secrets, or destructive changes.',
+    '',
+    `Plan ID: ${plan.id}`,
+    `Execution run ID: ${targetRunId}`,
+    `Report: ${plan.reportFilePath}`,
+    `Changes patch: ${plan.changesPatchPath}`,
+    `File operations: ${plan.fileOpsPath}`,
+    `Execution workspace: ${plan.executionWorkspacePath}`,
+    '',
+    userInstructions ? `User apply instructions:\n${userInstructions}` : '',
+  ].filter(Boolean).join('\n');
+
+  await appendAlwaysOnRunEvent(projectRoot, {
+    runId: applyRunId,
+    kind: 'plan',
+    sourceId: nextPlan.id,
+    title: `Apply: ${nextPlan.title}`,
+    status: 'queued',
+    timestamp: now,
+    startedAt: now,
+    metadata: {
+      planId: nextPlan.id,
+      sourceRunId: targetRunId,
+      applyStatus: nextPlan.applyStatus,
+    },
+  });
+
+  return {
+    applyRunId,
+    status: 'queued',
+    plan: buildDiscoveryPlanOverview(nextPlan, await readDiscoveryPlanBody(projectRoot, nextPlan.planFilePath), null),
+    sessionSummary: `Apply Always-On: ${nextPlan.title}`,
+    command,
+  };
 }
 
 export async function archiveProjectDiscoveryPlan(projectName, planId) {

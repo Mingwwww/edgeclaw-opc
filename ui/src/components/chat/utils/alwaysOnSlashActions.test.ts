@@ -8,7 +8,6 @@ const executionPayload: ExecuteDiscoveryPlanResponse = {
     title: 'Investigate flaky tests',
     createdAt: '2026-04-20T10:00:00.000Z',
     updatedAt: '2026-04-20T10:00:00.000Z',
-    approvalMode: 'manual',
     status: 'queued',
     summary: 'Stabilize the flaky test suite.',
     rationale: 'Reduce CI noise.',

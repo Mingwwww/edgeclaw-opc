@@ -15,15 +15,18 @@ export const REQUIRED_DISCOVERY_PLAN_SECTIONS = [
   '## Proposed Work',
   '## Execution Steps',
   '## Verification',
-  '## Approval And Execution',
+  '## To-Do List',
 ] as const
 
-export type DiscoveryPlanApprovalMode = 'auto' | 'manual'
 export type DiscoveryPlanStatus =
   | 'draft'
   | 'ready'
   | 'queued'
   | 'running'
+  | 'apply_pending'
+  | 'apply_queued'
+  | 'apply_running'
+  | 'apply_failed'
   | 'completed'
   | 'failed'
   | 'superseded'
@@ -41,16 +44,26 @@ export type DiscoveryPlanRecord = {
   title: string
   createdAt: string
   updatedAt: string
-  approvalMode: DiscoveryPlanApprovalMode
   status: DiscoveryPlanStatus
   summary: string
   rationale: string
   dedupeKey: string
   sourceDiscoverySessionId: string
   executionSessionId?: string
+  executionRunId?: string
+  executionQueuedAt?: string
   executionStartedAt?: string
   executionLastActivityAt?: string
   executionStatus?: 'queued' | 'running' | 'completed' | 'failed'
+  executionFailureReason?: string
+  executionWorkspaceKind?: 'git-worktree' | 'snapshot-git-mirror' | 'mirror'
+  executionWorkspacePath?: string
+  executionRunDir?: string
+  mirrorStrategy?: Record<string, unknown>
+  applyStatus?: 'pending' | 'queued' | 'running' | 'applied' | 'failed' | 'needs_review'
+  reportFilePath?: string
+  changesPatchPath?: string
+  fileOpsPath?: string
   latestSummary?: string
   contextRefs: DiscoveryPlanContextRefs
   planFilePath: string
@@ -65,7 +78,6 @@ export type DiscoveryPlanIndex = {
 export type DiscoveryPlanInput = {
   id?: string
   title: string
-  approvalMode: DiscoveryPlanApprovalMode
   summary: string
   rationale: string
   dedupeKey: string
@@ -191,9 +203,16 @@ export async function writeDiscoveryPlanIndex(
   projectRoot = getProjectRoot(),
 ): Promise<void> {
   await ensureDiscoveryPlanDirectories(projectRoot)
+  const plans = index.plans.map(plan => {
+    const { approvalMode: _approvalMode, ...rest } = plan as DiscoveryPlanRecord & {
+      approvalMode?: unknown
+    }
+    void _approvalMode
+    return rest
+  })
   await writeFile(
     getDiscoveryPlanIndexPath(projectRoot),
-    `${JSON.stringify(index, null, 2)}\n`,
+    `${JSON.stringify({ ...index, plans }, null, 2)}\n`,
     'utf8',
   )
 }
@@ -252,6 +271,7 @@ export async function upsertDiscoveryPlans(
   const savedPlans: DiscoveryPlanRecord[] = []
 
   for (const input of inputs) {
+    const requestedPlanId = normalizeText(input.id) || undefined
     const title = normalizeText(input.title)
     const summary = normalizeText(input.summary)
     const rationale = normalizeText(input.rationale)
@@ -269,8 +289,8 @@ export async function upsertDiscoveryPlans(
       )
     }
 
-    const existingIndex = input.id
-      ? index.plans.findIndex(plan => plan.id === input.id)
+    const existingIndex = requestedPlanId
+      ? index.plans.findIndex(plan => plan.id === requestedPlanId)
       : index.plans.findIndex(
           plan =>
             plan.sourceDiscoverySessionId === sourceDiscoverySessionId &&
@@ -279,7 +299,7 @@ export async function upsertDiscoveryPlans(
 
     const existingPlan =
       existingIndex >= 0 ? index.plans[existingIndex] : null
-    const planId = existingPlan?.id ?? input.id ?? (await generateDiscoveryPlanId(projectRoot))
+    const planId = existingPlan?.id ?? requestedPlanId ?? (await generateDiscoveryPlanId(projectRoot))
     const planFilePath = await writeDiscoveryPlanContent(planId, content, projectRoot)
 
     const nextPlan: DiscoveryPlanRecord = {
@@ -287,7 +307,6 @@ export async function upsertDiscoveryPlans(
       title,
       createdAt: existingPlan?.createdAt ?? now,
       updatedAt: now,
-      approvalMode: input.approvalMode,
       status:
         existingPlan?.status &&
         ['queued', 'running', 'completed', 'failed'].includes(existingPlan.status)
@@ -298,9 +317,20 @@ export async function upsertDiscoveryPlans(
       dedupeKey,
       sourceDiscoverySessionId,
       executionSessionId: existingPlan?.executionSessionId,
+      executionRunId: existingPlan?.executionRunId,
+      executionQueuedAt: existingPlan?.executionQueuedAt,
       executionStartedAt: existingPlan?.executionStartedAt,
       executionLastActivityAt: existingPlan?.executionLastActivityAt,
       executionStatus: existingPlan?.executionStatus,
+      executionFailureReason: existingPlan?.executionFailureReason,
+      executionWorkspaceKind: existingPlan?.executionWorkspaceKind,
+      executionWorkspacePath: existingPlan?.executionWorkspacePath,
+      executionRunDir: existingPlan?.executionRunDir,
+      mirrorStrategy: existingPlan?.mirrorStrategy,
+      applyStatus: existingPlan?.applyStatus,
+      reportFilePath: existingPlan?.reportFilePath,
+      changesPatchPath: existingPlan?.changesPatchPath,
+      fileOpsPath: existingPlan?.fileOpsPath,
       latestSummary: existingPlan?.latestSummary,
       contextRefs: normalizeContextRefs(input.contextRefs),
       planFilePath,

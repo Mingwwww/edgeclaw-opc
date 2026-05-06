@@ -74,8 +74,8 @@ D
 ## Verification
 E
 
-## Approval And Execution
-F
+## To-Do List
+- [ ] F
 `,
     'utf8',
   )
@@ -138,7 +138,6 @@ test('prepareAoDiscoveryPlanExecution rejects queued plans', async () => {
       title: 'Queued plan',
       createdAt: '2026-04-20T10:00:00.000Z',
       updatedAt: '2026-04-20T10:00:00.000Z',
-      approvalMode: 'manual',
       status: 'queued',
       summary: 'Already queued.',
       rationale: 'Avoid duplicate execution.',
@@ -176,7 +175,6 @@ test('prepareAoDiscoveryPlanExecution marks the plan running and builds a prompt
       title: 'Investigate flaky tests',
       createdAt: '2026-04-20T10:00:00.000Z',
       updatedAt: '2026-04-20T10:00:00.000Z',
-      approvalMode: 'manual',
       status: 'ready',
       summary: 'Stabilize flaky tests.',
       rationale: 'Keep CI healthy.',

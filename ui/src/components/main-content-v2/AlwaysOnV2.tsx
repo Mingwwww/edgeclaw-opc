@@ -240,7 +240,17 @@ function canArchiveOrDeleteRow(row: AlwaysOnRow): boolean {
 }
 
 export function isActivePlan(plan: DiscoveryPlanOverview): boolean {
+  if (plan.status === 'apply_pending' || plan.status === 'apply_queued' || plan.status === 'apply_running' || plan.status === 'apply_failed') {
+    return true;
+  }
   return plan.status !== 'completed' && plan.status !== 'superseded' && plan.executionStatus !== 'completed';
+}
+
+function getPlanStatusLabel(plan: DiscoveryPlanOverview): string {
+  if (plan.status === 'apply_pending' || plan.status === 'apply_queued' || plan.status === 'apply_running' || plan.status === 'apply_failed') {
+    return plan.status;
+  }
+  return plan.executionStatus || plan.status;
 }
 
 export function isActiveCronJob(job: CronJobOverview): boolean {
@@ -335,7 +345,7 @@ function getRows(
       id: `plan:${plan.id}`,
       title: getPlanRowTitle(plan),
       typeLabel: t('types.plan', { defaultValue: 'plan' }),
-      statusLabel: plan.executionStatus || plan.status,
+      statusLabel: getPlanStatusLabel(plan),
       createdAt: plan.createdAt,
       triggeredAt: plan.executionStartedAt,
       completedAt: completed,

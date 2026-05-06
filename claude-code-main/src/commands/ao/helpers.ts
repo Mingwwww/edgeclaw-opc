@@ -374,7 +374,7 @@ export function buildAoDiscoveryPlanExecutionPrompt(
   return [
     `Always-On execution for project "${projectLabel}".`,
     '',
-    'This plan is already approved.',
+    'This plan is ready for execution.',
     'Execute the work directly.',
     'Do not enter Plan Mode.',
     'Do not create a second mini-plan before acting.',
@@ -529,7 +529,6 @@ export function formatAoDiscoveryPlanList(
   for (const plan of plans) {
     lines.push(`- ${plan.id} - ${normalizeText(plan.title)}`)
     lines.push(`  - Status: ${getDiscoveryPlanStatus(plan)}`)
-    lines.push(`  - Approval: ${plan.approvalMode}`)
     lines.push(`  - Updated: ${formatDateTime(plan.updatedAt)}`)
     lines.push(`  - Summary: ${summarizeText(plan.summary, 180)}`)
   }
@@ -545,7 +544,6 @@ export function formatAoDiscoveryPlanStatus(
     '',
     `- Title: ${normalizeText(plan.title)}`,
     `- Status: ${getDiscoveryPlanStatus(plan)}`,
-    `- Approval: ${plan.approvalMode}`,
     `- Updated: ${formatDateTime(plan.updatedAt)}`,
     `- Execution session: ${normalizeText(plan.executionSessionId)}`,
     `- Execution started: ${formatDateTime(plan.executionStartedAt)}`,

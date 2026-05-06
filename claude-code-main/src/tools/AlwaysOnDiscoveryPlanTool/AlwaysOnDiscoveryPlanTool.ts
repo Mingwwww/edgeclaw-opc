@@ -20,12 +20,11 @@ const contextRefsSchema = z.strictObject({
 const discoveryPlanSchema = z.strictObject({
   id: z
     .string()
+    .trim()
+    .min(1)
     .optional()
     .describe('Optional existing discovery plan ID to update.'),
   title: z.string().describe('Short plan title shown in the Always-On dashboard.'),
-  approvalMode: z
-    .enum(['auto', 'manual'])
-    .describe('Whether the plan should auto-execute or wait for manual approval.'),
   summary: z
     .string()
     .describe('A brief summary of the value of this plan.'),
@@ -42,7 +41,7 @@ const discoveryPlanSchema = z.strictObject({
     .optional()
     .describe('Human-readable references summarizing the signals that informed this plan.'),
   supersedesPlanIds: z
-    .array(z.string())
+    .array(z.string().trim().min(1))
     .optional()
     .describe('Existing discovery plan IDs that should be marked superseded by this new plan.'),
 })
@@ -52,7 +51,7 @@ const inputSchema = lazySchema(() =>
     plans: z
       .array(discoveryPlanSchema)
       .min(1)
-      .max(3)
+      .max(1)
       .describe('The discovery plans to create or update.'),
   }),
 )
@@ -64,7 +63,6 @@ const outputSchema = lazySchema(() =>
       z.object({
         id: z.string(),
         title: z.string(),
-        approvalMode: z.enum(['auto', 'manual']),
         status: z.string(),
         planFilePath: z.string(),
       }),
@@ -74,7 +72,7 @@ const outputSchema = lazySchema(() =>
 type OutputSchema = ReturnType<typeof outputSchema>
 
 type Output = {
-  savedPlans: Array<Pick<DiscoveryPlanRecord, 'id' | 'title' | 'approvalMode' | 'status' | 'planFilePath'>>
+  savedPlans: Array<Pick<DiscoveryPlanRecord, 'id' | 'title' | 'status' | 'planFilePath'>>
 }
 
 function normalizeContextRefs(
@@ -145,7 +143,6 @@ export const AlwaysOnDiscoveryPlanTool = buildTool({
         savedPlans: savedPlans.map(plan => ({
           id: plan.id,
           title: plan.title,
-          approvalMode: plan.approvalMode,
           status: plan.status,
           planFilePath: plan.planFilePath,
         })),
@@ -157,7 +154,7 @@ export const AlwaysOnDiscoveryPlanTool = buildTool({
     const rendered = output.savedPlans
       .map(
         plan =>
-          `- ${plan.id}: ${plan.title} (${plan.approvalMode}, ${plan.status}) -> ${plan.planFilePath}`,
+          `- ${plan.id}: ${plan.title} (${plan.status}) -> ${plan.planFilePath}`,
       )
       .join('\n')
 

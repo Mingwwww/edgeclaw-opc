@@ -16,6 +16,7 @@ type StartClaudeSessionOptions = {
   images?: unknown[];
   alwaysOnPlanId?: string;
   alwaysOnExecutionToken?: string;
+  executionWorkspacePath?: string;
 };
 
 const VALID_PERMISSION_MODES = new Set<PermissionMode>([
@@ -87,10 +88,11 @@ export function startClaudeSessionCommand({
   images,
   alwaysOnPlanId,
   alwaysOnExecutionToken,
+  executionWorkspacePath,
 }: StartClaudeSessionOptions): string {
   const sessionToActivate =
     sessionId || temporarySessionId || createTemporarySessionId();
-  const resolvedProjectPath = getSelectedProjectPath(selectedProject);
+  const resolvedProjectPath = executionWorkspacePath || getSelectedProjectPath(selectedProject);
 
   safeLocalStorage.setItem('selected-provider', 'claude');
 

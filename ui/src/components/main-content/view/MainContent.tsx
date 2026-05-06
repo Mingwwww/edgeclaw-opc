@@ -43,6 +43,7 @@ import {
   createDiscoveryRequestDedupeStore,
   shouldProcessDiscoveryRequest,
 } from '../../../utils/alwaysOnDiscoveryRequestDedupe';
+import { isAutoExecutableDiscoveryPlan } from '../../../utils/alwaysOnPlanExecution';
 import { findAlwaysOnProjectByRoot } from '../../../utils/alwaysOnProjectMatching';
 import MainContentStateView from './subcomponents/MainContentStateView';
 import ErrorBoundary from './ErrorBoundary';
@@ -276,6 +277,7 @@ function MainContent({
       toolsSettings: buildAlwaysOnExecutionToolsSettings(),
       alwaysOnPlanId: planId,
       alwaysOnExecutionToken: payload.executionToken,
+      executionWorkspacePath: payload.executionWorkspace?.path,
     });
 
     refreshProjectsSilently();
@@ -533,11 +535,8 @@ function MainContent({
     }
 
     const autoReadyPlans = Array.isArray(payload.plans)
-      ? payload.plans.filter((plan) =>
-          plan.approvalMode === 'auto' &&
-          plan.status === 'ready' &&
-          !plan.executionSessionId &&
-          !autoLaunchInFlightRef.current.has(plan.id),
+      ? payload.plans.filter(plan =>
+          isAutoExecutableDiscoveryPlan(plan, autoLaunchInFlightRef.current),
         )
       : [];
 

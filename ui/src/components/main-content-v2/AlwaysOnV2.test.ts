@@ -14,7 +14,6 @@ const basePlan: DiscoveryPlanOverview = {
   title: 'Plan Alpha',
   createdAt: '2026-04-20T10:00:00.000Z',
   updatedAt: '2026-04-20T10:00:00.000Z',
-  approvalMode: 'manual',
   status: 'ready',
   summary: '',
   rationale: '',
@@ -45,6 +44,10 @@ describe('AlwaysOnV2 active item filtering', () => {
   it('hides completed plans from the active list', () => {
     expect(isActivePlan({ ...basePlan, status: 'completed' })).toBe(false);
     expect(isActivePlan({ ...basePlan, executionStatus: 'completed' })).toBe(false);
+  });
+
+  it('keeps apply-pending plans visible after isolated execution completes', () => {
+    expect(isActivePlan({ ...basePlan, status: 'apply_pending', executionStatus: 'completed' })).toBe(true);
   });
 
   it('hides superseded plans from the active list', () => {

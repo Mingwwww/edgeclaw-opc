@@ -12,6 +12,7 @@ import {
   archiveProjectDiscoveryPlan,
   getProjectDiscoveryContext,
   getProjectDiscoveryPlansOverview,
+  queueDiscoveryPlanApply,
   queueDiscoveryPlanExecution,
   updateProjectDiscoveryPlanExecution
 } from '../discovery-plans.js';
@@ -345,6 +346,29 @@ export async function handleUpdateProjectDiscoveryPlanExecution(req, res) {
   }
 }
 
+export async function handleApplyProjectDiscoveryPlan(req, res) {
+  try {
+    const projectName = getTrimmedParam(req.params?.projectName);
+    const planId = getTrimmedParam(req.params?.planId);
+    if (!projectName) {
+      return res.status(400).json({ error: 'projectName is required' });
+    }
+    if (!planId) {
+      return res.status(400).json({ error: 'planId is required' });
+    }
+
+    const payload = await queueDiscoveryPlanApply(projectName, planId, {
+      runId: getTrimmedParam(req.body?.runId),
+      userInstructions: getTrimmedParam(req.body?.userInstructions),
+    });
+    return res.json(payload);
+  } catch (error) {
+    return res.status(getDiscoveryPlanErrorStatus(error)).json({
+      error: getDiscoveryPlanErrorMessage(error, 'Failed to queue discovery plan apply')
+    });
+  }
+}
+
 export async function handleArchiveProjectDiscoveryPlan(req, res) {
   try {
     const projectName = getTrimmedParam(req.params?.projectName);
@@ -477,6 +501,7 @@ router.get('/:projectName/discovery-context', handleGetProjectDiscoveryContext);
 router.get('/:projectName/discovery-plans', handleGetProjectDiscoveryPlans);
 router.post('/:projectName/discovery-plans/:planId/execute', handleExecuteProjectDiscoveryPlan);
 router.patch('/:projectName/discovery-plans/:planId/execution', handleUpdateProjectDiscoveryPlanExecution);
+router.post('/:projectName/discovery-plans/:planId/apply', handleApplyProjectDiscoveryPlan);
 router.post('/:projectName/discovery-plans/:planId/archive', handleArchiveProjectDiscoveryPlan);
 
 /**

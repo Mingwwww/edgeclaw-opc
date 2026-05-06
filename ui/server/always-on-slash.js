@@ -211,7 +211,6 @@ function buildPlanListMarkdown(projectPath, plans) {
   for (const plan of plans) {
     lines.push(`- \`${plan.id}\` - ${formatText(plan.title)}`);
     lines.push(`  - Status: \`${plan.status}\``);
-    lines.push(`  - Approval: \`${plan.approvalMode}\``);
     lines.push(`  - Updated: ${formatDateTime(plan.updatedAt)}`);
     lines.push(`  - Summary: ${summarizeText(plan.summary, 180)}`);
   }
@@ -269,7 +268,6 @@ function buildPlanStatusMarkdown(projectPath, plan) {
     projectPath ? '' : '',
     `- Title: ${formatText(plan.title)}`,
     `- Status: \`${plan.status}\``,
-    `- Approval: \`${plan.approvalMode}\``,
     `- Updated: ${formatDateTime(plan.updatedAt)}`,
     `- Execution session: ${formatText(plan.executionSessionId)}`,
     `- Execution started: ${formatDateTime(plan.executionStartedAt)}`,
@@ -318,7 +316,6 @@ function buildPlanRunMarkdown(plan) {
     '',
     `- Title: ${formatText(plan.title)}`,
     `- Status: \`${plan.status}\``,
-    `- Approval: \`${plan.approvalMode}\``,
     '',
     `Use \`/ao status plan ${plan.id}\` to inspect the latest state.`,
   ].join('\n');

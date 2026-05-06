@@ -83,8 +83,8 @@ D
 ## Verification
 E
 
-## Approval And Execution
-F
+## To-Do List
+- [ ] F
 `,
     'utf8',
   );
@@ -170,7 +170,6 @@ test('list returns combined cron and plan markdown', async () => {
     title: 'Investigate flaky tests',
     createdAt: '2026-04-20T10:00:00.000Z',
     updatedAt: '2026-04-20T10:00:00.000Z',
-    approvalMode: 'manual',
     status: 'ready',
     summary: 'Check the recent flaky test failures and stabilize the suite.',
     rationale: 'This keeps CI healthy and reduces noise.',
@@ -221,7 +220,6 @@ test('status returns detailed markdown for cron jobs and discovery plans', async
     title: 'Investigate alerts',
     createdAt: '2026-04-20T10:00:00.000Z',
     updatedAt: '2026-04-20T10:00:00.000Z',
-    approvalMode: 'auto',
     status: 'ready',
     summary: 'Inspect recurring alert spikes.',
     rationale: 'Reduce alert fatigue.',
@@ -250,7 +248,7 @@ test('status returns detailed markdown for cron jobs and discovery plans', async
   assert.match(cronResult.data.content, /# Cron job `cron-status`/);
   assert.match(cronResult.data.content, /Manual only: `yes`/);
   assert.match(planResult.data.content, /# Discovery plan `plan-status`/);
-  assert.match(planResult.data.content, /Approval: `auto`/);
+  assert.match(planResult.data.content, /Status: `ready`/);
 });
 
 test('run cron forwards to the daemon and reports started or already running', async () => {
@@ -303,7 +301,6 @@ test('run plan returns a queued execution payload', async () => {
     title: 'Follow up on CI regressions',
     createdAt: '2026-04-20T10:00:00.000Z',
     updatedAt: '2026-04-20T10:00:00.000Z',
-    approvalMode: 'manual',
     status: 'ready',
     summary: 'Investigate CI regressions and fix the root cause.',
     rationale: 'Keep the branch healthy.',
@@ -342,7 +339,6 @@ test('run plan returns a message when the plan cannot be queued', async () => {
     title: 'Already running plan',
     createdAt: '2026-04-20T10:00:00.000Z',
     updatedAt: '2026-04-20T10:00:00.000Z',
-    approvalMode: 'manual',
     status: 'queued',
     summary: 'This plan is already queued.',
     rationale: 'Avoid duplicate execution.',

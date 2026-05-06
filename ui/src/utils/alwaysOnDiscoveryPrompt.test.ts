@@ -58,6 +58,7 @@ describe('alwaysOnDiscoveryPrompt', () => {
     expect(prompt).toContain('Always-On 主动发现规划');
     expect(prompt).toContain('近期聊天语言为准');
     expect(prompt).toContain('结构化 discovery context');
-    expect(prompt).toContain('## Approval And Execution');
+    expect(prompt).toContain('## To-Do List');
+    expect(prompt).toContain('- [ ] 检查当前行为');
   });
 });

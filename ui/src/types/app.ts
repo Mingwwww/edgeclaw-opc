@@ -113,16 +113,29 @@ export interface AlwaysOnRunLogResponse {
   source: AlwaysOnRunLogSource;
 }
 
-export type DiscoveryPlanApprovalMode = 'auto' | 'manual';
 export type DiscoveryPlanStatus =
   | 'draft'
   | 'ready'
   | 'queued'
   | 'running'
+  | 'apply_pending'
+  | 'apply_queued'
+  | 'apply_running'
+  | 'apply_failed'
   | 'completed'
   | 'failed'
   | 'superseded';
-export type DiscoveryPlanExecutionStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type DiscoveryPlanExecutionStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'apply_pending'
+  | 'apply_queued'
+  | 'apply_running'
+  | 'apply_failed';
+export type DiscoveryPlanExecutionWorkspaceKind = 'git-worktree' | 'snapshot-git-mirror' | 'mirror';
+export type DiscoveryPlanApplyStatus = 'pending' | 'queued' | 'running' | 'applied' | 'failed' | 'needs_review';
 
 export interface DiscoveryPlanContextRefs {
   workingDirectory: string[];
@@ -137,16 +150,26 @@ export interface DiscoveryPlanOverview {
   title: string;
   createdAt: string;
   updatedAt: string;
-  approvalMode: DiscoveryPlanApprovalMode;
   status: DiscoveryPlanStatus;
   summary: string;
   rationale: string;
   dedupeKey: string;
   sourceDiscoverySessionId: string;
   executionSessionId?: string;
+  executionRunId?: string;
+  executionQueuedAt?: string;
   executionStartedAt?: string;
   executionLastActivityAt?: string;
   executionStatus?: DiscoveryPlanExecutionStatus;
+  executionFailureReason?: string;
+  executionWorkspaceKind?: DiscoveryPlanExecutionWorkspaceKind;
+  executionWorkspacePath?: string;
+  executionRunDir?: string;
+  mirrorStrategy?: Record<string, unknown>;
+  applyStatus?: DiscoveryPlanApplyStatus;
+  reportFilePath?: string;
+  changesPatchPath?: string;
+  fileOpsPath?: string;
   latestSummary?: string;
   contextRefs: DiscoveryPlanContextRefs;
   planFilePath: string;
@@ -168,7 +191,6 @@ export interface DiscoveryContextPlanItem {
   id: string;
   title: string;
   status: DiscoveryPlanStatus;
-  approvalMode: DiscoveryPlanApprovalMode;
   updatedAt: string;
   summary: string;
 }
@@ -210,6 +232,19 @@ export interface ExecuteDiscoveryPlanResponse {
   sessionSummary: string;
   command: string;
   executionToken: string;
+  executionWorkspace?: {
+    kind?: DiscoveryPlanExecutionWorkspaceKind;
+    path?: string;
+    runDir?: string;
+  };
+}
+
+export interface ApplyDiscoveryPlanResponse {
+  plan: DiscoveryPlanOverview;
+  sessionSummary: string;
+  command: string;
+  applyRunId: string;
+  status: string;
 }
 
 export interface UpdateDiscoveryPlanExecutionResponse {
