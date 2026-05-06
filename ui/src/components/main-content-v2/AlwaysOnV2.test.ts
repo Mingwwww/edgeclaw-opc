@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { AlwaysOnRunHistoryEntry, CronJobOverview, DiscoveryPlanOverview } from '../../types/app';
 import {
+  getPlanChangeKind,
   getVisibleRunMetadataEntries,
   getPlanRowTitle,
   isActiveCronJob,
+  isAlwaysOnActivityNeedsReview,
   isActivePlan,
   isVisibleRunHistoryEntry,
   shouldPollRunLog,
@@ -99,6 +101,41 @@ describe('AlwaysOnV2 active item filtering', () => {
     expect(shouldPollRunLog('completed')).toBe(false);
     expect(shouldPollRunLog('failed')).toBe(false);
     expect(shouldPollRunLog('unknown')).toBe(false);
+  });
+
+  it('derives plan change presentation from review fields', () => {
+    expect(getPlanChangeKind(basePlan)).toBe('created');
+    expect(getPlanChangeKind({
+      ...basePlan,
+      updatedAt: '2026-04-20T11:00:00.000Z',
+    })).toBe('updated');
+    expect(getPlanChangeKind({
+      ...basePlan,
+      lastChangeKind: 'merged',
+    })).toBe('merged');
+  });
+
+  it('treats non-info unreviewed activity as needing review', () => {
+    expect(isAlwaysOnActivityNeedsReview({
+      id: 'activity-1',
+      kind: 'plan_updated',
+      targetType: 'plan',
+      targetId: 'plan-alpha',
+      title: 'Plan Alpha',
+      summary: 'Updated',
+      happenedAt: '2026-04-20T10:00:00.000Z',
+      severity: 'review',
+    })).toBe(true);
+    expect(isAlwaysOnActivityNeedsReview({
+      id: 'activity-2',
+      kind: 'run_completed',
+      targetType: 'run',
+      targetId: 'run-alpha',
+      title: 'Run Alpha',
+      summary: 'Completed',
+      happenedAt: '2026-04-20T10:00:00.000Z',
+      severity: 'info',
+    })).toBe(false);
   });
 
   it('hides internal run metadata keys from history detail metadata', () => {

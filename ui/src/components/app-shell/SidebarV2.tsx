@@ -287,7 +287,7 @@ export default function SidebarV2({
   const { t } = useTranslation();
   const navigate = useNavigate();
   useCustomNamesVersion();
-  const safeProjects = Array.isArray(projects) ? projects : [];
+  const safeProjects = useMemo(() => (Array.isArray(projects) ? projects : []), [projects]);
 
   const [renamingProject, setRenamingProject] = useState<string | null>(null);
   const [renamingSession, setRenamingSession] = useState<string | null>(null);
@@ -652,6 +652,7 @@ export default function SidebarV2({
       typeof project.sessionMeta?.total === 'number' ? project.sessionMeta.total : null;
     const remaining =
       totalSessions !== null ? Math.max(0, totalSessions - sessions.length) : null;
+    const isAlwaysOnActive = selectedProject?.name === project.name && activeTab === 'always-on';
 
     // `flat` mode is used by the General tab where sessions are rendered as a
     // top-level list (no folder ancestor), so the usual ml-6 indent would
@@ -660,6 +661,34 @@ export default function SidebarV2({
 
     return (
       <div className={containerClass}>
+        <button
+          type="button"
+          onClick={() => {
+            onSelectProject(project);
+            onSelectTab('always-on');
+          }}
+          className={cn(
+            'mb-1 flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors',
+            isAlwaysOnActive
+              ? 'bg-neutral-200/70 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100'
+              : 'text-neutral-900 hover:bg-neutral-100 dark:text-neutral-100 dark:hover:bg-neutral-800',
+          )}
+        >
+          <span className="mt-1 flex h-3 w-3 shrink-0 items-center justify-center">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 dark:bg-blue-400" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-[12.5px] font-medium">
+                {t('sidebar:sessions.alwaysOn', { defaultValue: 'Always-on' })}
+              </span>
+            </span>
+            <span className="block truncate text-[11px] text-neutral-500 dark:text-neutral-400">
+              {t('sidebar:sessions.alwaysOnDescription', { defaultValue: 'Background discovery inbox' })}
+            </span>
+          </span>
+        </button>
+
         {showDraftSession ? (
           <button
             type="button"

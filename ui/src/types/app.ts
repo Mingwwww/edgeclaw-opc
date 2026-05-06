@@ -113,6 +113,45 @@ export interface AlwaysOnRunLogResponse {
   source: AlwaysOnRunLogSource;
 }
 
+export type AlwaysOnActivityKind =
+  | 'plan_created'
+  | 'plan_updated'
+  | 'plan_merged'
+  | 'cron_ran'
+  | 'run_failed'
+  | 'run_completed';
+export type AlwaysOnActivityTargetType = 'plan' | 'cron' | 'run';
+export type AlwaysOnActivitySeverity = 'info' | 'review' | 'warning' | 'error';
+
+export interface AlwaysOnActivity {
+  id: string;
+  kind: AlwaysOnActivityKind;
+  targetType: AlwaysOnActivityTargetType;
+  targetId: string;
+  title: string;
+  summary: string;
+  happenedAt: string;
+  severity: AlwaysOnActivitySeverity;
+  seenAt?: string;
+  reviewedAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ProjectAlwaysOnActivityResponse {
+  activities: AlwaysOnActivity[];
+}
+
+export interface AlwaysOnInboxSummary {
+  unseenCount: number;
+  needsReviewCount: number;
+  updatedPlansCount: number;
+  newPlansCount: number;
+  failedRunsCount: number;
+  totalAttentionCount: number;
+  headline: string;
+  latestActivity: AlwaysOnActivity | null;
+}
+
 export type DiscoveryPlanApprovalMode = 'auto' | 'manual';
 export type DiscoveryPlanStatus =
   | 'draft'
@@ -148,6 +187,14 @@ export interface DiscoveryPlanOverview {
   executionLastActivityAt?: string;
   executionStatus?: DiscoveryPlanExecutionStatus;
   latestSummary?: string;
+  lastActivityId?: string;
+  lastChangeKind?: 'created' | 'updated' | 'merged';
+  lastChangedAt?: string;
+  lastSeenAt?: string;
+  lastReviewedAt?: string;
+  needsReview?: boolean;
+  changeSummary?: string;
+  changeBullets?: string[];
   contextRefs: DiscoveryPlanContextRefs;
   planFilePath: string;
   structureVersion: number;

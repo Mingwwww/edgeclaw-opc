@@ -60,6 +60,18 @@ export const api = {
     authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/always-on/run-history/${encodeURIComponent(runId)}`),
   projectAlwaysOnRunLog: (projectName, runId, tailBytes = 60000) =>
     authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/always-on/run-history/${encodeURIComponent(runId)}/log?tailBytes=${encodeURIComponent(tailBytes)}`),
+  projectAlwaysOnActivity: (projectName, limit = 500) =>
+    authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/always-on/activity?limit=${encodeURIComponent(limit)}`),
+  projectAlwaysOnInboxSummary: (projectName) =>
+    authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/always-on/inbox-summary`),
+  markAlwaysOnActivitySeen: (projectName, activityId) =>
+    authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/always-on/activity/${encodeURIComponent(activityId)}/seen`, {
+      method: 'PATCH',
+    }),
+  markAlwaysOnActivityReviewed: (projectName, activityId) =>
+    authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/always-on/activity/${encodeURIComponent(activityId)}/reviewed`, {
+      method: 'PATCH',
+    }),
   projectDiscoveryContext: (projectName) =>
     authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/discovery-context`),
   projectDiscoveryPlans: (projectName) =>
@@ -73,6 +85,10 @@ export const api = {
     authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/discovery-plans/${encodeURIComponent(planId)}/execution`, {
       method: 'PATCH',
       body: JSON.stringify(body),
+    }),
+  markProjectDiscoveryPlanReviewed: (projectName, planId) =>
+    authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/discovery-plans/${encodeURIComponent(planId)}/reviewed`, {
+      method: 'PATCH',
     }),
   archiveProjectDiscoveryPlan: (projectName, planId) =>
     authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/discovery-plans/${encodeURIComponent(planId)}/archive`, {

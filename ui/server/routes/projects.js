@@ -12,6 +12,7 @@ import {
   archiveProjectDiscoveryPlan,
   getProjectDiscoveryContext,
   getProjectDiscoveryPlansOverview,
+  markProjectDiscoveryPlanReviewed,
   queueDiscoveryPlanExecution,
   updateProjectDiscoveryPlanExecution
 } from '../discovery-plans.js';
@@ -20,6 +21,12 @@ import {
   getAlwaysOnRunHistoryDetail
 } from '../services/always-on-run-history.js';
 import { getAlwaysOnRunLog } from '../services/always-on-run-logs.js';
+import {
+  getAlwaysOnInboxSummary,
+  markAlwaysOnActivityReviewed,
+  markAlwaysOnActivitySeen,
+  readAlwaysOnActivities
+} from '../services/always-on-activity.js';
 import { sendCronDaemonRequest } from '../services/cron-daemon-owner.js';
 
 const router = express.Router();
@@ -467,6 +474,94 @@ export async function handleGetProjectAlwaysOnRunLog(req, res) {
   }
 }
 
+export async function handleGetProjectAlwaysOnActivity(req, res) {
+  try {
+    const projectName = getTrimmedParam(req.params?.projectName);
+    if (!projectName) {
+      return res.status(400).json({ error: 'projectName is required' });
+    }
+
+    const projectRoot = await extractProjectDirectory(projectName);
+    const limit = Number.parseInt(req.query?.limit || '', 10);
+    const payload = await readAlwaysOnActivities(projectRoot, {
+      limit: Number.isFinite(limit) ? limit : undefined
+    });
+    return res.json(payload);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+}
+
+export async function handleGetProjectAlwaysOnInboxSummary(req, res) {
+  try {
+    const projectName = getTrimmedParam(req.params?.projectName);
+    if (!projectName) {
+      return res.status(400).json({ error: 'projectName is required' });
+    }
+
+    const projectRoot = await extractProjectDirectory(projectName);
+    const summary = await getAlwaysOnInboxSummary(projectRoot);
+    return res.json(summary);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+}
+
+async function handleMarkProjectAlwaysOnActivity(req, res, mode) {
+  try {
+    const projectName = getTrimmedParam(req.params?.projectName);
+    const activityId = getTrimmedParam(req.params?.activityId);
+    if (!projectName) {
+      return res.status(400).json({ error: 'projectName is required' });
+    }
+    if (!activityId) {
+      return res.status(400).json({ error: 'activityId is required' });
+    }
+
+    const projectRoot = await extractProjectDirectory(projectName);
+    const activity = mode === 'reviewed'
+      ? await markAlwaysOnActivityReviewed(projectRoot, activityId)
+      : await markAlwaysOnActivitySeen(projectRoot, activityId);
+    const summary = await getAlwaysOnInboxSummary(projectRoot);
+    return res.json({ activity, summary });
+  } catch (error) {
+    const status = error?.code === 'NOT_FOUND' ? 404 : 500;
+    return res.status(status).json({ error: error.message });
+  }
+}
+
+export async function handleMarkProjectAlwaysOnActivitySeen(req, res) {
+  return handleMarkProjectAlwaysOnActivity(req, res, 'seen');
+}
+
+export async function handleMarkProjectAlwaysOnActivityReviewed(req, res) {
+  return handleMarkProjectAlwaysOnActivity(req, res, 'reviewed');
+}
+
+export async function handleMarkProjectDiscoveryPlanReviewed(req, res) {
+  try {
+    const projectName = getTrimmedParam(req.params?.projectName);
+    const planId = getTrimmedParam(req.params?.planId);
+    if (!projectName) {
+      return res.status(400).json({ error: 'projectName is required' });
+    }
+    if (!planId) {
+      return res.status(400).json({ error: 'planId is required' });
+    }
+
+    const plan = await markProjectDiscoveryPlanReviewed(projectName, planId);
+    return res.json({ plan });
+  } catch (error) {
+    return res.status(getDiscoveryPlanErrorStatus(error)).json({
+      error: getDiscoveryPlanErrorMessage(error, 'Failed to mark discovery plan reviewed')
+    });
+  }
+}
+
+router.get('/:projectName/always-on/activity', handleGetProjectAlwaysOnActivity);
+router.get('/:projectName/always-on/inbox-summary', handleGetProjectAlwaysOnInboxSummary);
+router.patch('/:projectName/always-on/activity/:activityId/seen', handleMarkProjectAlwaysOnActivitySeen);
+router.patch('/:projectName/always-on/activity/:activityId/reviewed', handleMarkProjectAlwaysOnActivityReviewed);
 router.get('/:projectName/always-on/run-history', handleGetProjectAlwaysOnRunHistory);
 router.get('/:projectName/always-on/run-history/:runId/log', handleGetProjectAlwaysOnRunLog);
 router.get('/:projectName/always-on/run-history/:runId', handleGetProjectAlwaysOnRunHistoryDetail);
@@ -477,6 +572,7 @@ router.get('/:projectName/discovery-context', handleGetProjectDiscoveryContext);
 router.get('/:projectName/discovery-plans', handleGetProjectDiscoveryPlans);
 router.post('/:projectName/discovery-plans/:planId/execute', handleExecuteProjectDiscoveryPlan);
 router.patch('/:projectName/discovery-plans/:planId/execution', handleUpdateProjectDiscoveryPlanExecution);
+router.patch('/:projectName/discovery-plans/:planId/reviewed', handleMarkProjectDiscoveryPlanReviewed);
 router.post('/:projectName/discovery-plans/:planId/archive', handleArchiveProjectDiscoveryPlan);
 
 /**

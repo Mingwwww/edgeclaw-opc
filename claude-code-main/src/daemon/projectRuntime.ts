@@ -28,8 +28,12 @@ const WORKER_SHUTDOWN_GRACE_MS = 5_000
 type AlwaysOnRunStatus = 'running' | 'completed' | 'failed'
 type AlwaysOnCronLogLevel = 'info' | 'warn' | 'error'
 
+function getAlwaysOnDir(projectRoot: string): string {
+  return join(resolve(projectRoot), '.claude', 'always-on')
+}
+
 function getAlwaysOnRunsDir(projectRoot: string): string {
-  return join(resolve(projectRoot), '.claude', 'always-on', 'runs')
+  return join(getAlwaysOnDir(projectRoot), 'runs')
 }
 
 function quoteLogValue(value: string): string {
@@ -119,7 +123,7 @@ export async function appendCronRunHistoryEvent(
   startedAt: string,
   options: { finishedAt?: string; error?: string } = {},
 ): Promise<void> {
-  const alwaysOnDir = join(resolve(projectRoot), '.claude', 'always-on')
+  const alwaysOnDir = getAlwaysOnDir(projectRoot)
   const transcriptFilename = task.transcriptKey
     ? `agent-${task.transcriptKey.replace(/^agent-/, '').replace(/\.jsonl$/, '')}.jsonl`
     : undefined
@@ -155,6 +159,30 @@ export async function appendCronRunHistoryEvent(
   try {
     await mkdir(alwaysOnDir, { recursive: true })
     await appendFile(join(alwaysOnDir, 'run-history.jsonl'), `${JSON.stringify(event)}\n`, 'utf-8')
+    if (status === 'completed' || status === 'failed') {
+      const activity = {
+        id: `cron-run:${runId}:${status}`,
+        kind: status === 'failed' ? 'run_failed' : 'cron_ran',
+        targetType: 'cron',
+        targetId: task.id,
+        title: event.title,
+        summary:
+          status === 'failed'
+            ? options.error || `Scheduled job failed: ${event.title}`
+            : `Scheduled job completed: ${event.title}`,
+        happenedAt: options.finishedAt ?? startedAt,
+        severity: status === 'failed' ? 'error' : 'info',
+        metadata: {
+          runId,
+          taskId: task.id,
+          cron: task.cron,
+          status,
+          originSessionId: task.originSessionId,
+          transcriptKey: task.transcriptKey,
+        },
+      }
+      await appendFile(join(alwaysOnDir, 'activity.jsonl'), `${JSON.stringify(activity)}\n`, 'utf-8')
+    }
   } catch (error) {
     logForDebugging(
       `[CronDaemon] failed to append run history for ${task.id}: ${String(error)}`,

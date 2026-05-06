@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'fs/promises'
 import { join, resolve } from 'path'
 import { getProjectRoot, getSessionId } from '../bootstrap/state.js'
 import { isENOENT } from './errors.js'
@@ -52,6 +52,14 @@ export type DiscoveryPlanRecord = {
   executionLastActivityAt?: string
   executionStatus?: 'queued' | 'running' | 'completed' | 'failed'
   latestSummary?: string
+  lastActivityId?: string
+  lastChangeKind?: 'created' | 'updated' | 'merged'
+  lastChangedAt?: string
+  lastSeenAt?: string
+  lastReviewedAt?: string
+  needsReview?: boolean
+  changeSummary?: string
+  changeBullets?: string[]
   contextRefs: DiscoveryPlanContextRefs
   planFilePath: string
   structureVersion: number
@@ -136,6 +144,10 @@ function getRelativePlanMarkdownPath(planId: string): string {
   return join('.claude', 'always-on', 'plans', `${planId}.md`)
 }
 
+function getAlwaysOnActivityPath(projectRoot = getProjectRoot()): string {
+  return join(getAlwaysOnRoot(projectRoot), 'activity.jsonl')
+}
+
 async function ensureDiscoveryPlanDirectories(projectRoot = getProjectRoot()) {
   await mkdir(getDiscoveryPlanMarkdownDirectory(projectRoot), { recursive: true })
 }
@@ -210,6 +222,30 @@ async function writeDiscoveryPlanContent(
   return getRelativePlanMarkdownPath(planId)
 }
 
+async function appendAlwaysOnActivity(
+  projectRoot: string,
+  activity: {
+    id: string
+    kind:
+      | 'plan_created'
+      | 'plan_updated'
+      | 'plan_merged'
+      | 'cron_ran'
+      | 'run_failed'
+      | 'run_completed'
+    targetType: 'plan' | 'cron' | 'run'
+    targetId: string
+    title: string
+    summary: string
+    happenedAt: string
+    severity: 'info' | 'review' | 'warning' | 'error'
+    metadata?: Record<string, unknown>
+  },
+): Promise<void> {
+  await ensureDiscoveryPlanDirectories(projectRoot)
+  await appendFile(getAlwaysOnActivityPath(projectRoot), `${JSON.stringify(activity)}\n`, 'utf8')
+}
+
 async function generateDiscoveryPlanId(projectRoot = getProjectRoot()): Promise<string> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const slug = generateWordSlug()
@@ -280,6 +316,17 @@ export async function upsertDiscoveryPlans(
     const existingPlan =
       existingIndex >= 0 ? index.plans[existingIndex] : null
     const planId = existingPlan?.id ?? input.id ?? (await generateDiscoveryPlanId(projectRoot))
+    const existingContent = existingPlan
+      ? await readDiscoveryPlanContent(existingPlan.planFilePath, projectRoot)
+      : ''
+    const hasMeaningfulChange =
+      !existingPlan ||
+      normalizeText(existingPlan.title) !== title ||
+      normalizeText(existingPlan.summary) !== summary ||
+      normalizeText(existingPlan.rationale) !== rationale ||
+      normalizeText(existingContent) !== content
+    const changeKind = existingPlan ? 'updated' : 'created'
+    const activityId = `plan:${changeKind}:${planId}:${now}`
     const planFilePath = await writeDiscoveryPlanContent(planId, content, projectRoot)
 
     const nextPlan: DiscoveryPlanRecord = {
@@ -302,6 +349,30 @@ export async function upsertDiscoveryPlans(
       executionLastActivityAt: existingPlan?.executionLastActivityAt,
       executionStatus: existingPlan?.executionStatus,
       latestSummary: existingPlan?.latestSummary,
+      lastActivityId: hasMeaningfulChange ? activityId : existingPlan?.lastActivityId,
+      lastChangeKind: hasMeaningfulChange ? changeKind : existingPlan?.lastChangeKind,
+      lastChangedAt: hasMeaningfulChange ? now : existingPlan?.lastChangedAt,
+      lastSeenAt: hasMeaningfulChange ? undefined : existingPlan?.lastSeenAt,
+      lastReviewedAt: hasMeaningfulChange ? undefined : existingPlan?.lastReviewedAt,
+      needsReview: hasMeaningfulChange ? true : existingPlan?.needsReview,
+      changeSummary: hasMeaningfulChange
+        ? existingPlan
+          ? `Always-On updated the existing plan "${title}".`
+          : `Always-On created a new plan "${title}".`
+        : existingPlan?.changeSummary,
+      changeBullets: hasMeaningfulChange
+        ? existingPlan
+          ? [
+              'Merged newly discovered evidence into this existing plan.',
+              'Kept related work in one plan instead of opening another session.',
+              'Review the updated plan before execution.',
+            ]
+          : [
+              'Found actionable follow-up work that did not match an existing plan.',
+              'Captured the relevant context and proposed execution steps.',
+              'Review the plan before execution.',
+            ]
+        : existingPlan?.changeBullets,
       contextRefs: normalizeContextRefs(input.contextRefs),
       planFilePath,
       structureVersion: ALWAYS_ON_DISCOVERY_STRUCTURE_VERSION,
@@ -314,6 +385,28 @@ export async function upsertDiscoveryPlans(
     }
 
     savedPlans.push(nextPlan)
+    if (hasMeaningfulChange) {
+      await appendAlwaysOnActivity(projectRoot, {
+        id: activityId,
+        kind: existingPlan ? 'plan_updated' : 'plan_created',
+        targetType: 'plan',
+        targetId: planId,
+        title,
+        summary: existingPlan
+          ? `Updated existing plan: ${summary}`
+          : `Created new plan: ${summary}`,
+        happenedAt: now,
+        severity: 'review',
+        metadata: {
+          planId,
+          planFilePath,
+          dedupeKey,
+          sourceDiscoverySessionId,
+          changeKind,
+          supersedesPlanIds: input.supersedesPlanIds ?? [],
+        },
+      })
+    }
   }
 
   const supersededPlanIds = mergeSupersededPlanIds(inputs)
@@ -327,9 +420,37 @@ export async function upsertDiscoveryPlans(
                 ? plan.status
                 : 'superseded',
             updatedAt: now,
+            lastChangeKind: 'merged',
+            lastChangedAt: now,
+            needsReview: true,
+            changeSummary: `Always-On merged this plan into newer related work.`,
+            changeBullets: [
+              'A newer discovery plan superseded this item.',
+              'Related context was consolidated to avoid duplicate work.',
+              'Review the replacement plan before archiving related context.',
+            ],
           }
         : plan,
     )
+    for (const plan of index.plans) {
+      if (supersededPlanIds.has(plan.id)) {
+        await appendAlwaysOnActivity(projectRoot, {
+          id: `plan:merged:${plan.id}:${now}`,
+          kind: 'plan_merged',
+          targetType: 'plan',
+          targetId: plan.id,
+          title: plan.title,
+          summary: `Merged duplicate or superseded work for "${plan.title}".`,
+          happenedAt: now,
+          severity: 'review',
+          metadata: {
+            planId: plan.id,
+            planFilePath: plan.planFilePath,
+            supersededByPlanIds: savedPlans.map(savedPlan => savedPlan.id),
+          },
+        })
+      }
+    }
   }
 
   await writeDiscoveryPlanIndex(index, projectRoot)

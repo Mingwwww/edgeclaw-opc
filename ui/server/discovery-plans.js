@@ -16,6 +16,10 @@ import {
   appendAlwaysOnRunLogEvent,
   formatAlwaysOnPlanLogLine
 } from './services/always-on-run-logs.js';
+import {
+  appendAlwaysOnActivity,
+  markAlwaysOnActivityReviewed,
+} from './services/always-on-activity.js';
 
 const ALWAYS_ON_DISCOVERY_INDEX_VERSION = 1;
 const ALWAYS_ON_DISCOVERY_STRUCTURE_VERSION = 1;
@@ -150,6 +154,14 @@ function normalizeDiscoveryPlanRecord(record) {
     executionLastActivityAt: toIsoTimestamp(record?.executionLastActivityAt),
     executionStatus: normalizeString(record?.executionStatus),
     latestSummary: normalizeString(record?.latestSummary),
+    lastActivityId: normalizeString(record?.lastActivityId),
+    lastChangeKind: normalizeString(record?.lastChangeKind),
+    lastChangedAt: toIsoTimestamp(record?.lastChangedAt),
+    lastSeenAt: toIsoTimestamp(record?.lastSeenAt),
+    lastReviewedAt: toIsoTimestamp(record?.lastReviewedAt),
+    needsReview: record?.needsReview === true,
+    changeSummary: normalizeString(record?.changeSummary),
+    changeBullets: normalizeStringList(record?.changeBullets),
     contextRefs,
     planFilePath: normalizeString(record?.planFilePath, getRelativePlanMarkdownPath(id)),
     structureVersion:
@@ -282,6 +294,10 @@ function buildDiscoveryPlanOverview(plan, content, session) {
     latestSummary: latestSummary || undefined,
     content: content.trim()
   };
+}
+
+function getPlanActivitySummary(plan, fallback) {
+  return normalizeString(plan.latestSummary || plan.changeSummary || plan.summary, fallback);
 }
 
 function sortDiscoveryPlans(plans) {
@@ -715,6 +731,56 @@ export async function updateProjectDiscoveryPlanExecution(projectName, planId, u
       status: normalizedStatus,
       sessionId: nextPlan.executionSessionId,
     });
+    if (normalizedStatus === 'completed' || normalizedStatus === 'failed') {
+      await appendAlwaysOnActivity(projectRoot, {
+        id: `plan-run:${executionRunId}:${normalizedStatus}`,
+        kind: normalizedStatus === 'failed' ? 'run_failed' : 'run_completed',
+        targetType: 'run',
+        targetId: executionRunId,
+        title: nextPlan.title,
+        summary: getPlanActivitySummary(
+          nextPlan,
+          normalizedStatus === 'failed'
+            ? `Plan execution failed: ${nextPlan.title}`
+            : `Plan execution completed: ${nextPlan.title}`,
+        ),
+        happenedAt: now,
+        severity: normalizedStatus === 'failed' ? 'error' : 'info',
+        metadata: {
+          planId: nextPlan.id,
+          planFilePath: nextPlan.planFilePath,
+          status: normalizedStatus,
+          sessionId: nextPlan.executionSessionId,
+          runId: executionRunId,
+        },
+      });
+    }
+  }
+
+  const content = await readDiscoveryPlanBody(projectRoot, nextPlan.planFilePath);
+  return buildDiscoveryPlanOverview(nextPlan, content, null);
+}
+
+export async function markProjectDiscoveryPlanReviewed(projectName, planId) {
+  const match = await findProjectDiscoveryPlan(projectName, planId);
+  if (!match) {
+    const error = new Error('Discovery plan not found');
+    error.code = 'NOT_FOUND';
+    throw error;
+  }
+
+  const { projectRoot, store, index, plan } = match;
+  const now = new Date().toISOString();
+  const nextPlan = {
+    ...plan,
+    lastSeenAt: plan.lastSeenAt || now,
+    lastReviewedAt: now,
+    needsReview: false,
+  };
+  store.plans[index] = nextPlan;
+  await writeDiscoveryPlanStore(projectRoot, store);
+  if (nextPlan.lastActivityId) {
+    await markAlwaysOnActivityReviewed(projectRoot, nextPlan.lastActivityId).catch(() => null);
   }
 
   const content = await readDiscoveryPlanBody(projectRoot, nextPlan.planFilePath);

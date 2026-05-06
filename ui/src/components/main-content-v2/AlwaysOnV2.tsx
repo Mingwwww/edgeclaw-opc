@@ -5,7 +5,10 @@ import type { TFunction } from 'i18next';
 import {
   AlertCircle,
   ArrowLeft,
+  CheckCircle2,
+  Clock3,
   Eye,
+  ListChecks,
   Loader2,
   Pause,
   Play,
@@ -14,6 +17,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import type {
+  AlwaysOnActivity,
+  AlwaysOnInboxSummary,
   AlwaysOnSessionTarget,
   AlwaysOnRunHistoryDetail,
   AlwaysOnRunHistoryEntry,
@@ -24,6 +29,7 @@ import type {
   Project,
   ProjectAlwaysOnRunHistoryDetailResponse,
   ProjectAlwaysOnRunHistoryResponse,
+  ProjectAlwaysOnActivityResponse,
   ProjectCronJobsResponse,
   ProjectDiscoveryPlansResponse,
 } from '../../types/app';
@@ -47,7 +53,7 @@ const TABLE_GRID_COLUMNS =
 const HISTORY_TABLE_GRID_COLUMNS =
   'grid-cols-[minmax(280px,1.8fr)_96px_96px_128px_minmax(160px,0.8fr)_112px]';
 
-type AlwaysOnSubTab = 'items' | 'history';
+type AlwaysOnSubTab = 'inbox' | 'plans' | 'jobs' | 'history';
 
 type AlwaysOnRow =
   | {
@@ -255,6 +261,14 @@ export function shouldPollRunLog(status: AlwaysOnRunHistoryStatus | undefined): 
   return status === 'queued' || status === 'running';
 }
 
+export function isAlwaysOnActivityNeedsReview(activity: AlwaysOnActivity): boolean {
+  return activity.severity !== 'info' && !activity.reviewedAt;
+}
+
+export function getPlanChangeKind(plan: DiscoveryPlanOverview): 'created' | 'updated' | 'merged' {
+  return plan.lastChangeKind || (plan.createdAt === plan.updatedAt ? 'created' : 'updated');
+}
+
 function DetailSection({
   title,
   children,
@@ -376,10 +390,12 @@ export default function AlwaysOnV2({
   onOpenSession,
 }: AlwaysOnV2Props) {
   const { t } = useTranslation('alwaysOn');
-  const [activeSubTab, setActiveSubTab] = useState<AlwaysOnSubTab>('items');
+  const [activeSubTab, setActiveSubTab] = useState<AlwaysOnSubTab>('inbox');
   const [plans, setPlans] = useState<DiscoveryPlanOverview[]>([]);
   const [cronJobs, setCronJobs] = useState<CronJobOverview[]>([]);
   const [runHistory, setRunHistory] = useState<AlwaysOnRunHistoryEntry[]>([]);
+  const [activities, setActivities] = useState<AlwaysOnActivity[]>([]);
+  const [inboxSummary, setInboxSummary] = useState<AlwaysOnInboxSummary | null>(null);
   const [historyDetailRunId, setHistoryDetailRunId] = useState<string | null>(null);
   const [historyDetail, setHistoryDetail] = useState<AlwaysOnRunHistoryDetail | null>(null);
   const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
@@ -404,15 +420,19 @@ export default function AlwaysOnV2({
       setPlans([]);
       setCronJobs([]);
       setRunHistory([]);
+      setActivities([]);
+      setInboxSummary(null);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const [plansResponse, cronJobsResponse, runHistoryResponse] = await Promise.all([
+      const [plansResponse, cronJobsResponse, runHistoryResponse, activityResponse, summaryResponse] = await Promise.all([
         api.projectDiscoveryPlans(projectName),
         api.projectCronJobs(projectName),
         api.projectAlwaysOnRunHistory(projectName),
+        api.projectAlwaysOnActivity(projectName),
+        api.projectAlwaysOnInboxSummary(projectName),
       ]);
 
       if (!plansResponse.ok) {
@@ -427,10 +447,20 @@ export default function AlwaysOnV2({
         const body = (await runHistoryResponse.json().catch(() => ({}))) as { error?: string };
         throw new Error(body?.error || `HTTP ${runHistoryResponse.status}`);
       }
+      if (!activityResponse.ok) {
+        const body = (await activityResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body?.error || `HTTP ${activityResponse.status}`);
+      }
+      if (!summaryResponse.ok) {
+        const body = (await summaryResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body?.error || `HTTP ${summaryResponse.status}`);
+      }
 
       const plansPayload = (await plansResponse.json()) as ProjectDiscoveryPlansResponse;
       const cronJobsPayload = (await cronJobsResponse.json()) as ProjectCronJobsResponse;
       const runHistoryPayload = (await runHistoryResponse.json()) as ProjectAlwaysOnRunHistoryResponse;
+      const activityPayload = (await activityResponse.json()) as ProjectAlwaysOnActivityResponse;
+      const summaryPayload = (await summaryResponse.json()) as AlwaysOnInboxSummary;
       setPlans(Array.isArray(plansPayload.plans) ? plansPayload.plans : []);
       setCronJobs(Array.isArray(cronJobsPayload.jobs) ? cronJobsPayload.jobs : []);
       setRunHistory(
@@ -438,6 +468,8 @@ export default function AlwaysOnV2({
           ? runHistoryPayload.runs.filter(isVisibleRunHistoryEntry)
           : [],
       );
+      setActivities(Array.isArray(activityPayload.activities) ? activityPayload.activities : []);
+      setInboxSummary(summaryPayload);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -502,16 +534,17 @@ export default function AlwaysOnV2({
   );
   const isRunning = runningPlans.length > 0;
   const rows = getRows(plans, cronJobs, t);
+  const planRows = rows.filter((row): row is Extract<AlwaysOnRow, { kind: 'plan' }> => row.kind === 'plan');
+  const cronRows = rows.filter((row): row is Extract<AlwaysOnRow, { kind: 'cron' }> => row.kind === 'cron');
+  const failedRunCount = runHistory.filter((run) => run.status === 'failed').length;
+  const readyPlanCount = inboxSummary?.needsReviewCount ?? planRows.filter((row) => row.plan.needsReview || row.plan.status === 'ready').length;
+  const updatedPlanCount = inboxSummary?.updatedPlansCount ?? activities.filter((activity) => activity.kind === 'plan_updated' && !activity.seenAt).length;
+  const newPlanCount = inboxSummary?.newPlansCount ?? activities.filter((activity) => activity.kind === 'plan_created' && !activity.seenAt).length;
+  const failedAttentionCount = inboxSummary?.failedRunsCount ?? failedRunCount;
+  const needsReviewMetric = inboxSummary?.needsReviewCount ?? (readyPlanCount + failedAttentionCount);
+  const quietRunCount = runHistory.filter((run) => run.status === 'completed').length;
   const detailRow = detailRowId ? rows.find((row) => row.id === detailRowId) || null : null;
   const projectRoot = selectedProject?.fullPath || selectedProject?.path || selectedProject?.name || '';
-
-  if (!selectedProject) {
-    return (
-      <div className="flex h-full items-center justify-center bg-white text-[13px] text-neutral-500 dark:bg-neutral-950 dark:text-neutral-400">
-        {t('emptyProject', { defaultValue: 'Pick a project to view Always-On.' })}
-      </div>
-    );
-  }
 
   const handleLaunchDiscovery = async () => {
     setLaunching(true);
@@ -625,6 +658,71 @@ export default function AlwaysOnV2({
     }
   };
 
+  const markActivitySeen = useCallback(async (activityId: string | undefined) => {
+    if (!projectName || !activityId) return;
+    try {
+      const response = await api.markAlwaysOnActivitySeen(projectName, activityId);
+      if (response.ok) {
+        const payload = (await response.json().catch(() => null)) as { summary?: AlwaysOnInboxSummary } | null;
+        if (payload?.summary) setInboxSummary(payload.summary);
+        setActivities((prev) => prev.map((activity) =>
+          activity.id === activityId
+            ? { ...activity, seenAt: activity.seenAt || new Date().toISOString() }
+            : activity,
+        ));
+      }
+    } catch {
+      // Best-effort read state; refresh will reconcile.
+    }
+  }, [projectName]);
+
+  const markActivityReviewed = useCallback(async (activityId: string | undefined) => {
+    if (!projectName || !activityId) return;
+    try {
+      const response = await api.markAlwaysOnActivityReviewed(projectName, activityId);
+      if (response.ok) {
+        const payload = (await response.json().catch(() => null)) as { summary?: AlwaysOnInboxSummary } | null;
+        if (payload?.summary) setInboxSummary(payload.summary);
+        const now = new Date().toISOString();
+        setActivities((prev) => prev.map((activity) =>
+          activity.id === activityId
+            ? { ...activity, seenAt: activity.seenAt || now, reviewedAt: activity.reviewedAt || now }
+            : activity,
+        ));
+      }
+    } catch {
+      // Best-effort review state; refresh will reconcile.
+    }
+  }, [projectName]);
+
+  const markPlanReviewed = useCallback(async (plan: DiscoveryPlanOverview) => {
+    if (!projectName) return;
+    try {
+      await api.markProjectDiscoveryPlanReviewed(projectName, plan.id);
+      if (plan.lastActivityId) {
+        await markActivityReviewed(plan.lastActivityId);
+      }
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }, [markActivityReviewed, projectName, refresh]);
+
+  const openRowDetail = useCallback((row: AlwaysOnRow) => {
+    setDetailRowId(row.id);
+    if (row.kind === 'plan') {
+      void markActivitySeen(row.plan.lastActivityId);
+    }
+  }, [markActivitySeen]);
+
+  if (!selectedProject) {
+    return (
+      <div className="flex h-full items-center justify-center bg-white text-[13px] text-neutral-500 dark:bg-neutral-950 dark:text-neutral-400">
+        {t('emptyProject', { defaultValue: 'Pick a project to view Always-On.' })}
+      </div>
+    );
+  }
+
   const renderRowActions = (
     row: AlwaysOnRow,
     { includeCronSessionView = true }: { includeCronSessionView?: boolean } = {},
@@ -730,6 +828,16 @@ export default function AlwaysOnV2({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        {row.kind === 'plan' && row.plan.needsReview ? (
+          <button
+            type="button"
+            onClick={() => void markPlanReviewed(row.plan)}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xxs text-blue-600 transition hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+          >
+            <CheckCircle2 className="h-3 w-3" strokeWidth={1.75} />
+            {t('actions.markReviewed', { defaultValue: 'Mark reviewed' })}
+          </button>
+        ) : null}
         {renderRowActions(row, { includeCronSessionView: false })}
       </div>
     </div>
@@ -781,12 +889,80 @@ export default function AlwaysOnV2({
   const renderPlanDetail = (row: Extract<AlwaysOnRow, { kind: 'plan' }>) => {
     const { plan } = row;
     const planFileLocation = getPlanFileLocation(projectRoot, plan.planFilePath);
+    const changeKind = getPlanChangeKind(plan);
+    const changeLabel =
+      changeKind === 'created'
+        ? t('detail.newPlan', { defaultValue: 'New plan' })
+        : changeKind === 'merged'
+          ? t('detail.mergedPlan', { defaultValue: 'Merged plan' })
+          : t('detail.updatedPlan', { defaultValue: 'Updated plan' });
+    const changeSummary = plan.changeSummary ||
+      (changeKind === 'created'
+        ? t('detail.newPlanSummary', {
+            defaultValue: 'Always-On created this plan because it found actionable follow-up work that did not match an existing plan.',
+          })
+        : t('detail.updatedPlanSummary', {
+            defaultValue: 'Always-On updated this existing plan instead of creating another session.',
+          }));
+    const changeBullets = Array.isArray(plan.changeBullets) && plan.changeBullets.length > 0
+      ? plan.changeBullets
+      : changeKind === 'created'
+        ? [
+            t('detail.newPlanBullet1', { defaultValue: 'Found actionable follow-up work that did not match an existing plan.' }),
+            t('detail.newPlanBullet2', { defaultValue: 'Captured the relevant context and proposed execution steps.' }),
+            t('detail.newPlanBullet3', { defaultValue: 'Review the plan before execution.' }),
+          ]
+        : [
+            t('detail.changeBullet1', { defaultValue: 'Merged related discovery evidence into this existing plan.' }),
+            t('detail.changeBullet2', { defaultValue: 'Highlighted why the plan is still relevant for the current workspace.' }),
+            t('detail.changeBullet3', { defaultValue: 'Kept the work in one place so the session list does not grow.' }),
+          ];
 
     return (
       <>
         {renderDetailHeader(row)}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">
+            <DetailSection title={t('detail.sections.activitySummary', { defaultValue: 'Activity Summary' })}>
+              <div className="space-y-3">
+                <p className="text-[13px] leading-6 text-neutral-800 dark:text-neutral-200">
+                  {changeSummary}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/30">
+                    <div className="text-xxs font-medium uppercase tracking-wide text-blue-600 dark:text-blue-300">
+                      {t('detail.changeType', { defaultValue: 'Change type' })}
+                    </div>
+                    <div className="mt-1 text-[13px] font-medium text-blue-950 dark:text-blue-100">
+                      {changeLabel}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-amber-50 p-3 dark:bg-amber-950/30">
+                    <div className="text-xxs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-300">
+                      {t('detail.attention', { defaultValue: 'Attention' })}
+                    </div>
+                    <div className="mt-1 text-[13px] font-medium text-amber-950 dark:text-amber-100">
+                      {plan.needsReview
+                        ? t('detail.needsReview', { defaultValue: 'Needs review' })
+                        : t('detail.reviewed', { defaultValue: 'Reviewed' })}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-neutral-50 p-3 dark:bg-neutral-900">
+                    <div className="text-xxs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                      {t('detail.lastChange', { defaultValue: 'Last change' })}
+                    </div>
+                    <div className="mt-1 text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
+                      {formatRelative(plan.lastChangedAt || plan.updatedAt, t)}
+                    </div>
+                  </div>
+                </div>
+                <ul className="space-y-2 text-[13px] leading-6 text-neutral-700 dark:text-neutral-300">
+                  {changeBullets.map((bullet) => (
+                    <li key={bullet}>{bullet}</li>
+                  ))}
+                </ul>
+              </div>
+            </DetailSection>
             {plan.summary || plan.rationale ? (
               <DetailSection title={t('detail.sections.summary', { defaultValue: 'Summary' })}>
                 {plan.summary ? (
@@ -856,6 +1032,34 @@ export default function AlwaysOnV2({
         {renderDetailHeader(row)}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">
+            <DetailSection title={t('detail.sections.latestOutcome', { defaultValue: 'Latest outcome' })}>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg bg-neutral-50 p-3 dark:bg-neutral-900">
+                  <div className="text-xxs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                    {t('detail.fields.latestStatus', { defaultValue: 'Latest status' })}
+                  </div>
+                  <div className="mt-1 text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
+                    {latestRun?.status || cronJob.status}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/30">
+                  <div className="text-xxs font-medium uppercase tracking-wide text-blue-600 dark:text-blue-300">
+                    {t('detail.fields.lastResult', { defaultValue: 'Last result' })}
+                  </div>
+                  <div className="mt-1 text-[13px] font-medium text-blue-950 dark:text-blue-100">
+                    {latestRun?.summary || t('detail.demoCronResult', { defaultValue: 'Updated existing plans' })}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-neutral-50 p-3 dark:bg-neutral-900">
+                  <div className="text-xxs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                    {t('detail.fields.lastActivity', { defaultValue: 'Last activity' })}
+                  </div>
+                  <div className="mt-1 text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
+                    {formatTime(latestRun?.lastActivity || toIsoFromMs(cronJob.lastFiredAt))}
+                  </div>
+                </div>
+              </div>
+            </DetailSection>
             <DetailSection title={t('detail.sections.prompt', { defaultValue: 'Prompt' })}>
               <pre className="whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-4 text-[13px] leading-6 text-neutral-800 dark:bg-neutral-900 dark:text-neutral-200">
                 {cronJob.prompt}
@@ -1091,6 +1295,376 @@ export default function AlwaysOnV2({
     );
   };
 
+  const renderMetricCard = (
+    label: string,
+    value: string | number,
+    description: string,
+    icon: ReactNode,
+    tone: 'blue' | 'amber' | 'green' | 'neutral' = 'neutral',
+  ) => {
+    const toneClass = {
+      blue: 'bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300',
+      amber: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300',
+      green: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300',
+      neutral: 'bg-neutral-50 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300',
+    }[tone];
+
+    return (
+      <div className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <div className="flex items-center justify-between">
+          <div className="text-xxs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+            {label}
+          </div>
+          <div className={cn('flex h-7 w-7 items-center justify-center rounded-full', toneClass)}>
+            {icon}
+          </div>
+        </div>
+        <div className="mt-3 text-[24px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+          {value}
+        </div>
+        <div className="mt-1 text-[12px] text-neutral-500 dark:text-neutral-400">
+          {description}
+        </div>
+      </div>
+    );
+  };
+
+  const renderRowsTable = (displayRows: AlwaysOnRow[], emptyMessage: string) => {
+    if (loading && displayRows.length === 0) {
+      return (
+        <div className="flex items-center gap-2 text-[13px] text-neutral-500 dark:text-neutral-400">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
+          <span>{t('loading.items', { defaultValue: 'Loading items…' })}</span>
+        </div>
+      );
+    }
+
+    if (displayRows.length === 0) {
+      return <div className="text-[13px] text-neutral-500 dark:text-neutral-400">{emptyMessage}</div>;
+    }
+
+    return (
+      <div className="overflow-x-auto">
+        <div className="min-w-[980px] text-[13px]">
+          <div
+            className={cn(
+              'text-xxs grid gap-3 border-b border-neutral-200 pb-2 font-medium text-neutral-500 dark:border-neutral-800 dark:text-neutral-400',
+              TABLE_GRID_COLUMNS,
+            )}
+          >
+            <span>{t('table.title', { defaultValue: 'Title' })}</span>
+            <span>{t('table.type', { defaultValue: 'Type' })}</span>
+            <span>{t('table.status', { defaultValue: 'Status' })}</span>
+            <span>{t('table.created', { defaultValue: 'Created' })}</span>
+            <span>{t('table.triggered', { defaultValue: 'Triggered' })}</span>
+            <span>{t('table.completed', { defaultValue: 'Completed' })}</span>
+            <span aria-hidden="true" />
+          </div>
+          <div className="divide-y divide-neutral-100 dark:divide-neutral-900">
+            {displayRows.map((row) => (
+              <div key={row.id} className={cn('grid gap-3 py-3', TABLE_GRID_COLUMNS)}>
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => openRowDetail(row)}
+                    className="block max-w-full truncate rounded-sm text-left font-medium text-blue-600 outline-none transition hover:text-blue-700 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    {row.title}
+                  </button>
+                </div>
+                <div className="self-center text-xxs text-neutral-600 dark:text-neutral-300">
+                  {row.typeLabel}
+                </div>
+                <div className="self-center text-xxs text-neutral-600 dark:text-neutral-300">
+                  {row.statusLabel}
+                </div>
+                <div className="self-center font-mono text-xxs text-neutral-500 dark:text-neutral-400">
+                  {formatTime(row.createdAt)}
+                </div>
+                <div className="self-center font-mono text-xxs text-neutral-500 dark:text-neutral-400">
+                  {formatTime(row.triggeredAt)}
+                </div>
+                <div className="self-center font-mono text-xxs text-neutral-500 dark:text-neutral-400">
+                  {formatTime(row.completedAt)}
+                </div>
+                <div className="flex items-center justify-end gap-1.5">
+                  {renderRowActions(row)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const findActivityRow = (activity: AlwaysOnActivity): AlwaysOnRow | null => {
+    if (activity.targetType === 'plan') {
+      return planRows.find((row) => row.plan.id === activity.targetId) || null;
+    }
+    if (activity.targetType === 'cron') {
+      return cronRows.find((row) => row.cronJob.id === activity.targetId) || null;
+    }
+    const planId = typeof activity.metadata?.planId === 'string' ? activity.metadata.planId : '';
+    const taskId = typeof activity.metadata?.taskId === 'string' ? activity.metadata.taskId : '';
+    return (
+      (planId ? planRows.find((row) => row.plan.id === planId) : null) ||
+      (taskId ? cronRows.find((row) => row.cronJob.id === taskId) : null) ||
+      null
+    );
+  };
+
+  const getActivityIcon = (activity: AlwaysOnActivity) => {
+    if (activity.kind === 'plan_created') return <Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} />;
+    if (activity.kind === 'plan_updated' || activity.kind === 'plan_merged') return <ListChecks className="h-3.5 w-3.5" strokeWidth={1.75} />;
+    if (activity.kind === 'run_failed') return <AlertCircle className="h-3.5 w-3.5" strokeWidth={1.75} />;
+    if (activity.kind === 'cron_ran') return <Clock3 className="h-3.5 w-3.5" strokeWidth={1.75} />;
+    return <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.75} />;
+  };
+
+  const renderInbox = () => {
+    const visibleActivities = activities.slice(0, 8);
+
+    return (
+      <div className="space-y-5">
+        <div className="grid gap-3 md:grid-cols-4">
+          {renderMetricCard(
+            t('dashboard.metrics.needsReview', { defaultValue: 'Needs review' }),
+            needsReviewMetric,
+            t('dashboard.metrics.needsReviewDescription', { defaultValue: 'Plan updates or failures worth checking.' }),
+            <AlertCircle className="h-3.5 w-3.5" strokeWidth={1.75} />,
+            needsReviewMetric > 0 ? 'amber' : 'neutral',
+          )}
+          {renderMetricCard(
+            t('dashboard.metrics.updatedPlans', { defaultValue: 'Updated plans' }),
+            updatedPlanCount,
+            t('dashboard.metrics.updatedPlansDescription', { defaultValue: 'Existing work refined by discovery.' }),
+            <ListChecks className="h-3.5 w-3.5" strokeWidth={1.75} />,
+            'blue',
+          )}
+          {renderMetricCard(
+            t('dashboard.metrics.newPlans', { defaultValue: 'New plans' }),
+            newPlanCount,
+            t('dashboard.metrics.newPlansDescription', { defaultValue: 'Fresh follow-up work proposed.' }),
+            <Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} />,
+            'green',
+          )}
+          {renderMetricCard(
+            t('dashboard.metrics.scheduledJobs', { defaultValue: 'Scheduled jobs' }),
+            cronRows.length,
+            t('dashboard.metrics.scheduledJobsDescription', { defaultValue: 'Long-running automation rules.' }),
+            <Clock3 className="h-3.5 w-3.5" strokeWidth={1.75} />,
+            'neutral',
+          )}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+          <section className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-[15px] font-semibold text-neutral-900 dark:text-neutral-100">
+                  {t('dashboard.activity.title', { defaultValue: 'Recent activity' })}
+                </h3>
+                <p className="mt-0.5 text-[12px] text-neutral-500 dark:text-neutral-400">
+                  {t('dashboard.activity.subtitle', { defaultValue: 'What Always-On changed, created, or ran.' })}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {visibleActivities.map((activity) => {
+                const row = findActivityRow(activity);
+                const canReview = isAlwaysOnActivityNeedsReview(activity);
+                return (
+                  <div
+                    key={activity.id}
+                    className={cn(
+                      'flex gap-3 rounded-lg border p-3',
+                      activity.severity === 'error'
+                        ? 'border-red-200 bg-red-50/70 dark:border-red-900/50 dark:bg-red-950/20'
+                        : !activity.seenAt
+                          ? 'border-blue-100 bg-blue-50/60 dark:border-blue-900/50 dark:bg-blue-950/20'
+                          : 'border-neutral-200 dark:border-neutral-800',
+                    )}
+                  >
+                    <span className={cn(
+                      'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+                      activity.severity === 'error'
+                        ? 'bg-red-500 text-white'
+                        : activity.severity === 'info'
+                          ? 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200'
+                          : 'bg-blue-500 text-white',
+                    )}>
+                      {getActivityIcon(activity)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void markActivitySeen(activity.id);
+                            if (row) openRowDetail(row);
+                          }}
+                          className="truncate text-left text-[13px] font-medium text-blue-600 hover:underline dark:text-blue-400"
+                        >
+                          {activity.title}
+                        </button>
+                        {!activity.seenAt ? (
+                          <span className="rounded-full bg-blue-500 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white">
+                            {t('dashboard.activity.unseen', { defaultValue: 'New' })}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 text-[12px] leading-5 text-neutral-600 dark:text-neutral-300">
+                        {activity.summary || activity.kind.replace(/_/g, ' ')}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xxs text-neutral-500 dark:text-neutral-400">
+                        <span>{formatTime(activity.happenedAt)}</span>
+                        <span>{activity.kind.replace(/_/g, ' ')}</span>
+                        {canReview ? (
+                          <button
+                            type="button"
+                            onClick={() => void markActivityReviewed(activity.id)}
+                            className="rounded-md px-2 py-1 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                          >
+                            {t('actions.markReviewed', { defaultValue: 'Mark reviewed' })}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {visibleActivities.length === 0 && quietRunCount > 0 ? (
+                <div className="flex gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                    <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  </span>
+                  <div>
+                    <div className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
+                      {t('dashboard.activity.quietRuns', { defaultValue: 'Quiet runs completed' })}
+                    </div>
+                    <div className="mt-1 text-[12px] leading-5 text-neutral-500 dark:text-neutral-400">
+                      {t('dashboard.activity.quietRunsDescription', {
+                        count: quietRunCount,
+                        defaultValue: `${quietRunCount} completed runs had no urgent action.`,
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {visibleActivities.length === 0 && quietRunCount === 0 ? (
+                <p className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                  {t('dashboard.activity.empty', { defaultValue: 'No Always-On activity yet.' })}
+                </p>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+            <h3 className="text-[15px] font-semibold text-neutral-900 dark:text-neutral-100">
+              {t('dashboard.currentWork.title', { defaultValue: 'Current work' })}
+            </h3>
+            <p className="mt-0.5 text-[12px] text-neutral-500 dark:text-neutral-400">
+              {t('dashboard.currentWork.subtitle', { defaultValue: 'Stable assets owned by this workspace.' })}
+            </p>
+            <div className="mt-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('plans')}
+                className="flex w-full items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 text-left transition hover:bg-neutral-100 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+              >
+                <span className="text-[13px] text-neutral-800 dark:text-neutral-200">
+                  {t('dashboard.currentWork.plans', { defaultValue: 'Active plans' })}
+                </span>
+                <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">{planRows.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('jobs')}
+                className="flex w-full items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 text-left transition hover:bg-neutral-100 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+              >
+                <span className="text-[13px] text-neutral-800 dark:text-neutral-200">
+                  {t('dashboard.currentWork.jobs', { defaultValue: 'Scheduled jobs' })}
+                </span>
+                <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">{cronRows.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('history')}
+                className="flex w-full items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 text-left transition hover:bg-neutral-100 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+              >
+                <span className="text-[13px] text-neutral-800 dark:text-neutral-200">
+                  {t('dashboard.currentWork.runs', { defaultValue: 'Recorded runs' })}
+                </span>
+                <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">{runHistory.length}</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  };
+
+  const renderScheduledJobs = () => {
+    if (loading && cronRows.length === 0) {
+      return (
+        <div className="flex items-center gap-2 text-[13px] text-neutral-500 dark:text-neutral-400">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
+          <span>{t('loading.jobs', { defaultValue: 'Loading scheduled jobs…' })}</span>
+        </div>
+      );
+    }
+
+    if (cronRows.length === 0) {
+      return (
+        <div className="text-[13px] text-neutral-500 dark:text-neutral-400">
+          {t('empty.jobs', { defaultValue: 'No scheduled jobs for this workspace yet.' })}
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid gap-3 lg:grid-cols-2">
+        {cronRows.map((row) => (
+          <div key={row.id} className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => openRowDetail(row)}
+                  className="block max-w-full truncate text-left text-[14px] font-medium text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  {row.title}
+                </button>
+                <div className="mt-1 font-mono text-[12px] text-neutral-500 dark:text-neutral-400">
+                  {row.cronJob.cron}
+                </div>
+              </div>
+              <span className="rounded-md bg-neutral-100 px-2 py-1 text-xxs text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
+                {row.statusLabel}
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 text-[12px] text-neutral-500 dark:text-neutral-400 sm:grid-cols-2">
+              <div>
+                <div className="text-xxs uppercase tracking-wide">{t('detail.fields.lastFiredAt', { defaultValue: 'Last fired' })}</div>
+                <div className="mt-1 font-mono text-neutral-800 dark:text-neutral-200">{formatTime(row.triggeredAt)}</div>
+              </div>
+              <div>
+                <div className="text-xxs uppercase tracking-wide">{t('detail.fields.lastResult', { defaultValue: 'Last result' })}</div>
+                <div className="mt-1 text-neutral-800 dark:text-neutral-200">
+                  {row.cronJob.latestRun?.summary || t('detail.demoCronResult', { defaultValue: 'Updated existing plans' })}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-1.5">
+              {renderRowActions(row)}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderDetail = () => {
     if (!detailRowId) return null;
     if (!detailRow) {
@@ -1114,6 +1688,42 @@ export default function AlwaysOnV2({
     return detailRow.kind === 'plan' ? renderPlanDetail(detailRow) : renderCronDetail(detailRow);
   };
 
+  const renderActiveContent = () => {
+    if (activeSubTab === 'history') return renderHistory();
+    if (detailRowId) return renderDetail();
+    if (activeSubTab === 'plans') {
+      return renderRowsTable(
+        planRows,
+        t('empty.plans', { defaultValue: 'No active plans. New and updated plans will appear here.' }),
+      );
+    }
+    if (activeSubTab === 'jobs') return renderScheduledJobs();
+    return renderInbox();
+  };
+
+  const subTabs: Array<{ id: AlwaysOnSubTab; label: string; count?: number }> = [
+    {
+      id: 'inbox',
+      label: t('tabs.inbox', { defaultValue: 'Inbox' }),
+      count: readyPlanCount + failedRunCount + updatedPlanCount + newPlanCount,
+    },
+    {
+      id: 'plans',
+      label: t('tabs.plans', { defaultValue: 'Plans' }),
+      count: planRows.length,
+    },
+    {
+      id: 'jobs',
+      label: t('tabs.scheduledJobs', { defaultValue: 'Scheduled Jobs' }),
+      count: cronRows.length,
+    },
+    {
+      id: 'history',
+      label: t('tabs.runHistory', { defaultValue: 'Runs' }),
+      count: runHistory.length,
+    },
+  ];
+
   return (
     <div className="h-full bg-white dark:bg-neutral-950">
       <div
@@ -1121,34 +1731,38 @@ export default function AlwaysOnV2({
         aria-label={t('tabs.ariaLabel', { defaultValue: 'Always-On sections' })}
         className="scrollbar-thin flex h-9 items-center gap-1 overflow-x-auto border-b border-neutral-200 px-4 dark:border-neutral-800"
       >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeSubTab === 'items'}
-          onClick={() => setActiveSubTab('items')}
-          className={cn(
-            'inline-flex h-8 shrink-0 items-center rounded-md px-2.5 text-[13px] transition-colors',
-            activeSubTab === 'items'
-              ? 'bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100'
-              : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100',
-          )}
-        >
-          {t('tabs.plansCron', { defaultValue: 'Plans & Cron Jobs' })}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeSubTab === 'history'}
-          onClick={() => setActiveSubTab('history')}
-          className={cn(
-            'inline-flex h-8 shrink-0 items-center rounded-md px-2.5 text-[13px] transition-colors',
-            activeSubTab === 'history'
-              ? 'bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100'
-              : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100',
-          )}
-        >
-          {t('tabs.runHistory', { defaultValue: 'Run History' })}
-        </button>
+        {subTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeSubTab === tab.id}
+            onClick={() => {
+              setActiveSubTab(tab.id);
+              setDetailRowId(null);
+            }}
+            className={cn(
+              'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] transition-colors',
+              activeSubTab === tab.id
+                ? 'bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100'
+                : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100',
+            )}
+          >
+            <span>{tab.label}</span>
+            {typeof tab.count === 'number' ? (
+              <span
+                className={cn(
+                  'rounded-full px-1.5 py-0.5 text-[10px] leading-none',
+                  activeSubTab === tab.id
+                    ? 'bg-white text-neutral-700 dark:bg-neutral-900 dark:text-neutral-200'
+                    : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400',
+                )}
+              >
+                {tab.count}
+              </span>
+            ) : null}
+          </button>
+        ))}
       </div>
 
       <div className="h-[calc(100%-2.25rem)] overflow-y-auto">
@@ -1202,79 +1816,7 @@ export default function AlwaysOnV2({
               </div>
             ) : null}
 
-          {activeSubTab === 'history' ? (
-            renderHistory()
-          ) : detailRowId ? (
-            renderDetail()
-          ) : loading && rows.length === 0 ? (
-            <div className="flex items-center gap-2 text-[13px] text-neutral-500 dark:text-neutral-400">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
-              <span>{t('loading.items', { defaultValue: 'Loading items…' })}</span>
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="text-[13px] text-neutral-500 dark:text-neutral-400">
-              {t('empty.items', {
-                defaultValue: 'No active plans or cron jobs. Completed runs are available in Run History.',
-              })}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[980px] text-[13px]">
-                <div
-                  className={cn(
-                    'text-xxs grid gap-3 border-b border-neutral-200 pb-2 font-medium text-neutral-500 dark:border-neutral-800 dark:text-neutral-400',
-                    TABLE_GRID_COLUMNS,
-                  )}
-                >
-                  <span>{t('table.title', { defaultValue: 'Title' })}</span>
-                  <span>{t('table.type', { defaultValue: 'Type' })}</span>
-                  <span>{t('table.status', { defaultValue: 'Status' })}</span>
-                  <span>{t('table.created', { defaultValue: 'Created' })}</span>
-                  <span>{t('table.triggered', { defaultValue: 'Triggered' })}</span>
-                  <span>{t('table.completed', { defaultValue: 'Completed' })}</span>
-                  <span aria-hidden="true" />
-                </div>
-                <div className="divide-y divide-neutral-100 dark:divide-neutral-900">
-                  {rows.map((row) => {
-                    return (
-                      <div
-                        key={row.id}
-                        className={cn('grid gap-3 py-3', TABLE_GRID_COLUMNS)}
-                      >
-                        <div className="min-w-0">
-                          <button
-                            type="button"
-                            onClick={() => setDetailRowId(row.id)}
-                            className="block max-w-full truncate rounded-sm text-left font-medium text-blue-600 outline-none transition hover:text-blue-700 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
-                          >
-                            {row.title}
-                          </button>
-                        </div>
-                        <div className="self-center text-xxs text-neutral-600 dark:text-neutral-300">
-                          {row.typeLabel}
-                        </div>
-                        <div className="self-center text-xxs text-neutral-600 dark:text-neutral-300">
-                          {row.statusLabel}
-                        </div>
-                        <div className="self-center font-mono text-xxs text-neutral-500 dark:text-neutral-400">
-                          {formatTime(row.createdAt)}
-                        </div>
-                        <div className="self-center font-mono text-xxs text-neutral-500 dark:text-neutral-400">
-                          {formatTime(row.triggeredAt)}
-                        </div>
-                        <div className="self-center font-mono text-xxs text-neutral-500 dark:text-neutral-400">
-                          {formatTime(row.completedAt)}
-                        </div>
-                        <div className="flex items-center justify-end gap-1.5">
-                          {renderRowActions(row)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
+          {renderActiveContent()}
         </div>
 
         {plans.length > 0 ? (
