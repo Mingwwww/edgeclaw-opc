@@ -148,7 +148,7 @@ function defaultConfig(): EdgeClawConfig {
       maxMessageChars: 6000,
       heartbeatBatchSize: 30,
     },
-    router: { enabled: false },
+    router: { enabled: true },
     gateway: { enabled: false, home: join(homedir(), '.edgeclaw', 'gateway') },
   }
 }
