@@ -73,6 +73,8 @@ const jobClassifier = feature('TEMPLATES')
 import {
   remove as removeFromQueue,
   getCommandsByMaxPriority,
+  getCommandQueueSnapshot,
+  subscribeToCommandQueue,
   isSlashCommand,
 } from './utils/messageQueueManager.js'
 import { notifyCommandLifecycle } from './utils/commandLifecycle.js'
@@ -1340,6 +1342,58 @@ async function* queryLoop(
         }
       }
 
+      // Layer 2: Wait for pending async agent tasks before exiting.
+      // If the model ended with text-only but sub-agents are still running,
+      // subscribe to the notification queue and wait (event-driven) for them
+      // to complete. This prevents non-Claude models from exiting the loop
+      // while async agents are in flight.
+      const pendingAgentTasks = toolUseContext.getAppState().tasks
+      const hasActiveAgentTasks = Object.values(pendingAgentTasks).some(
+        (t: any) => t.type === 'local_agent' && t.status === 'running',
+      )
+
+      if (
+        hasActiveAgentTasks &&
+        !toolUseContext.abortController.signal.aborted
+      ) {
+        const waitedNotifications = await waitForAgentNotification(
+          subscribeToCommandQueue,
+          getCommandQueueSnapshot,
+          120_000,
+          toolUseContext.abortController.signal,
+        )
+
+        if (waitedNotifications.length > 0) {
+          const notifMessages = waitedNotifications.map(cmd =>
+            createUserMessage({
+              content: cmd.value as string,
+              isMeta: true,
+            }),
+          )
+          removeFromQueue(waitedNotifications)
+          for (const msg of notifMessages) yield msg
+
+          const next: State = {
+            messages: [
+              ...messagesForQuery,
+              ...assistantMessages,
+              ...notifMessages,
+            ],
+            toolUseContext,
+            autoCompactTracking: tracking,
+            maxOutputTokensRecoveryCount: 0,
+            hasAttemptedReactiveCompact: false,
+            maxOutputTokensOverride: undefined,
+            pendingToolUseSummary: undefined,
+            stopHookActive: undefined,
+            turnCount: turnCount + 1,
+            transition: { reason: 'agent_notification' as const },
+          }
+          state = next
+          continue
+        }
+      }
+
       return { reason: 'completed' }
     }
 
@@ -1537,11 +1591,36 @@ async function* queryLoop(
     // only; subagents never see the prompt stream.
     // eslint-disable-next-line custom-rules/require-tool-match-name -- ToolUseBlock.name has no aliases
     const sleepRan = toolUseBlocks.some(b => b.name === SLEEP_TOOL_NAME)
+
+    // Layer 1: Auto-sleep after Agent async launch.
+    // When an Agent tool returned async_launched this turn, wait briefly so
+    // fast-completing sub-agents can enqueue their notification before the
+    // drain. This delivers the result in the SAME turn (zero extra API call).
+    const agentAsyncLaunched = toolResults.some(r => {
+      if (r.type !== 'user') return false
+      const content = r.message.content
+      if (typeof content === 'string') return content.includes('Async agent launched')
+      if (Array.isArray(content)) {
+        return content.some((b: any) => {
+          if (b.type === 'tool_result') {
+            const c = b.content
+            if (typeof c === 'string') return c.includes('Async agent launched')
+            if (Array.isArray(c)) return c.some((p: any) => p.type === 'text' && p.text?.includes('Async agent launched'))
+          }
+          return false
+        })
+      }
+      return false
+    })
+    if (agentAsyncLaunched && !toolUseContext.abortController.signal.aborted) {
+      await new Promise(resolve => setTimeout(resolve, 10_000))
+    }
+
     const isMainThread =
       querySource.startsWith('repl_main_thread') || querySource === 'sdk'
     const currentAgentId = toolUseContext.agentId
     const queuedCommandsSnapshot = getCommandsByMaxPriority(
-      sleepRan ? 'later' : 'next',
+      (sleepRan || agentAsyncLaunched) ? 'later' : 'next',
     ).filter(cmd => {
       if (isSlashCommand(cmd)) return false
       if (isMainThread) return cmd.agentId === undefined
@@ -1699,4 +1778,43 @@ async function* queryLoop(
     }
     state = next
   } // while (true)
+}
+
+/**
+ * Event-driven wait for task-notification commands to appear in the queue.
+ * Resolves immediately if notifications are already queued, otherwise
+ * subscribes and waits until either a notification arrives, the abort signal
+ * fires, or the timeout expires.
+ */
+async function waitForAgentNotification(
+  subscribe: (cb: () => void) => () => void,
+  getSnapshot: () => readonly import('./types/textInputTypes.js').QueuedCommand[],
+  timeoutMs: number,
+  abortSignal: AbortSignal,
+): Promise<import('./types/textInputTypes.js').QueuedCommand[]> {
+  return new Promise(resolve => {
+    const check = () => {
+      const cmds = getSnapshot().filter(c => c.mode === 'task-notification')
+      if (cmds.length > 0) {
+        cleanup()
+        resolve([...cmds])
+      }
+    }
+    const onAbort = () => {
+      cleanup()
+      resolve([])
+    }
+    const cleanup = () => {
+      unsubscribe()
+      clearTimeout(timer)
+      abortSignal.removeEventListener('abort', onAbort)
+    }
+    const unsubscribe = subscribe(check)
+    abortSignal.addEventListener('abort', onAbort)
+    check()
+    const timer = setTimeout(() => {
+      cleanup()
+      resolve([])
+    }, timeoutMs)
+  })
 }

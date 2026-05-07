@@ -521,20 +521,20 @@ export const router = async (req: any, _res: any, context: RouterContext) => {
             req.log.info(`[AutoOrchestrate] injected orchestration prompt as user message (tier=${tier}, ${orchPrompt.length} chars)`);
           }
 
-          // Tool stripping — remove executor tools so orchestrator MUST delegate via Agent()
-          // Equivalent to ClawXRouter's before_tool_call block
+          // Tool whitelist — only keep tools the orchestrator needs, strip everything else.
+          // Equivalent to ClawXRouter's ORCHESTRATOR_ALLOWED_TOOLS whitelist.
           if (Array.isArray(req.body.tools)) {
-            const blockedPatterns = autoOrch.blockedTools ?? [
-              "mcp__browser-use__", "WebSearch", "WebFetch",
-            ];
+            const allowedTools = new Set<string>(autoOrch.allowedTools ?? [
+              "Agent", "Read", "Grep", "Glob", "TodoRead", "TodoWrite",
+            ]);
             const before = req.body.tools.length;
             req.body.tools = req.body.tools.filter((tool: any) => {
               const name = tool.name || tool.function?.name || "";
-              return !blockedPatterns.some((p: string) => name.startsWith(p));
+              return allowedTools.has(name);
             });
             const removed = before - req.body.tools.length;
             if (removed > 0) {
-              req.log.info(`[AutoOrchestrate] stripped ${removed} executor tools (${before}->${req.body.tools.length})`);
+              req.log.info(`[AutoOrchestrate] whitelist kept ${req.body.tools.length}/${before} tools (removed ${removed})`);
             }
           }
 
@@ -584,42 +584,11 @@ export const router = async (req: any, _res: any, context: RouterContext) => {
       }
     }
 
-    // Rewrite "Async agent launched" tool_result for non-Claude models.
-    // Non-Claude orchestrators (e.g. gpt-5.x) treat this as a final result and
-    // stop their turn ("fire and forget"). Replacing it with a directive that
-    // demands a follow-up tool call keeps the agentic loop alive.
-    const autoOrchConfig = routerConfig?.autoOrchestrate as AutoOrchestrateConfig | undefined;
-    if (
-      autoOrchConfig?.enabled &&
-      req.body.model &&
-      !req.body.model.includes("claude") &&
-      Array.isArray(req.body.messages)
-    ) {
-      for (const msg of req.body.messages) {
-        if (msg.role === "user" && Array.isArray(msg.content)) {
-          for (const block of msg.content) {
-            if (block.type === "tool_result" && Array.isArray(block.content)) {
-              for (const part of block.content) {
-                if (
-                  part.type === "text" &&
-                  part.text &&
-                  part.text.includes("Async agent launched")
-                ) {
-                  part.text =
-                    "AGENT RESULT PENDING. The sub-agent is executing and will return its output shortly. " +
-                    "While waiting, you MUST call a tool to keep the session alive. " +
-                    "Use: ls /tmp_workspace/results/ to check progress. " +
-                    "IMPORTANT: If you respond with ONLY text and no tool call, the session will TERMINATE immediately and all work will be lost.";
-                  req.log.info(
-                    "[AutoOrchestrate] rewrote Async-agent-launched tool_result for non-Claude model"
-                  );
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+    // NOTE: The "Async agent launched" tool_result rewrite for non-Claude
+    // models has been removed. The SDK query loop now handles pending async
+    // agents natively: Layer 1 auto-sleeps after Agent launch to drain
+    // notifications in-turn; Layer 2 event-waits before loop exit if agents
+    // are still running. See query.ts for details.
 
     // Debug dump — write the final request body to /tmp/ccr-debug/ for inspection
     if (process.env.CCR_DEBUG_DUMP) {

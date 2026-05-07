@@ -17,6 +17,28 @@ import { ProviderService } from "./services/provider";
 import { TransformerService } from "./services/transformer";
 import { TokenizerService } from "./services/tokenizer";
 
+let _tiktokenEnc: any = null;
+function getTiktokenEncoder() {
+  if (_tiktokenEnc) return _tiktokenEnc;
+  try {
+    const { get_encoding } = require("tiktoken");
+    _tiktokenEnc = get_encoding("o200k_base");
+    return _tiktokenEnc;
+  } catch {
+    return null;
+  }
+}
+
+function countTokens(text: string): number {
+  const enc = getTiktokenEncoder();
+  if (enc) {
+    try {
+      return enc.encode(text).length;
+    } catch { /* fall through */ }
+  }
+  return Math.ceil(text.length / 3);
+}
+
 const ZERO_USAGE_MAX_RETRIES = 5;
 
 export interface PipelineServices {
@@ -101,6 +123,59 @@ export async function processRequest(
 
   // Phase 1: Router — mutates req.body.model, sets scenarioType/tier/etc.
   await router(req, null, { configService, tokenizerService, providerService });
+
+  // Phase 1.5: Sub-agent context budget — hard cap to prevent runaway token usage.
+  // When a sub-agent's accumulated conversation exceeds subagentMaxTokens, return a
+  // synthetic "conclude now" response instead of forwarding to the upstream provider.
+  const routerCfg = configService.get<any>("Router");
+  const subMaxTokens = routerCfg?.autoOrchestrate?.subagentMaxTokens;
+  if (req.isSubagent && subMaxTokens && Array.isArray(body.messages)) {
+    const chunks: string[] = [];
+    for (const msg of body.messages) {
+      if (typeof msg.content === "string") {
+        chunks.push(msg.content);
+      } else if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === "text" && block.text) chunks.push(block.text);
+          else if (block.type === "tool_result") {
+            chunks.push(typeof block.content === "string" ? block.content : JSON.stringify(block.content || ""));
+          } else if (block.type === "tool_use" && block.input) {
+            chunks.push(JSON.stringify(block.input));
+          }
+        }
+      }
+    }
+    const estTokens = countTokens(chunks.join("\n"));
+
+    if (estTokens > subMaxTokens) {
+      log.info(
+        `[CCR] Sub-agent context budget exceeded: ~${estTokens} tokens > ${subMaxTokens} limit. Returning early-stop.`
+      );
+      return Response.json({
+        id: "ccr-budget-" + Date.now(),
+        type: "message",
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text:
+              `[CONTEXT BUDGET EXCEEDED] This sub-agent session has used ~${Math.round(estTokens / 1000)}K tokens, ` +
+              `exceeding the ${Math.round(subMaxTokens / 1000)}K limit. The session is being terminated. ` +
+              `Return whatever results you have so far. Do NOT start new work.`,
+          },
+        ],
+        model: body.model || "budget-limit",
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: {
+          input_tokens: 0,
+          output_tokens: 50,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+      });
+    }
+  }
 
   // Phase 2: Split "provider,model" from req.body.model
   if (!req.body.model) {
