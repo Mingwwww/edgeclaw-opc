@@ -294,6 +294,7 @@ export default function SidebarV2({
   const [renameDraft, setRenameDraft] = useState<string>('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
   const [contextMenu, setContextMenu] = useState<SidebarContextMenu | null>(null);
+  const [collapsedSessionProjects, setCollapsedSessionProjects] = useState<Set<string>>(new Set());
   const renameInputRef = useRef<HTMLInputElement | null>(null);
 
   // Segmented toggle between the Projects list and the General workspace.
@@ -639,11 +640,11 @@ export default function SidebarV2({
     project: Project,
     options: { flat?: boolean } = {},
   ) => {
-    // 500 is a defensive ceiling — if a user holds down Load more their DOM
-    // doesn't grow unboundedly. Backend pages 30 at a time so this caps at
-    // ~17 clicks worth of history; sessionMeta.total is shown in the button
-    // so they always know how much is still on disk.
-    const sessions = collectSessionsForProject(project).slice(0, 500);
+    const COLLAPSED_SESSION_LIMIT = 5;
+    const allSessions = collectSessionsForProject(project).slice(0, 500);
+    const isCollapsed = collapsedSessionProjects.has(project.name);
+    const sessions = isCollapsed ? allSessions.slice(0, COLLAPSED_SESSION_LIMIT) : allSessions;
+    const hiddenLoadedCount = isCollapsed ? Math.max(0, allSessions.length - COLLAPSED_SESSION_LIMIT) : 0;
     const showDraftSession =
       selectedProject?.name === project.name && activeTab === 'chat' && !selectedSession;
     const hasMoreSessions = Boolean(project.sessionMeta?.hasMore);
@@ -651,7 +652,7 @@ export default function SidebarV2({
     const totalSessions =
       typeof project.sessionMeta?.total === 'number' ? project.sessionMeta.total : null;
     const remaining =
-      totalSessions !== null ? Math.max(0, totalSessions - sessions.length) : null;
+      totalSessions !== null ? Math.max(0, totalSessions - allSessions.length) : null;
 
     // `flat` mode is used by the General tab where sessions are rendered as a
     // top-level list (no folder ancestor), so the usual ml-6 indent would
@@ -750,13 +751,21 @@ export default function SidebarV2({
           </div>
         )}
 
-        {hasMoreSessions && onLoadMoreSessions ? (
+        {((isCollapsed && hiddenLoadedCount > 0) || (!isCollapsed && hasMoreSessions && onLoadMoreSessions)) ? (
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
               if (isLoadingMore) return;
-              onLoadMoreSessions(project.name);
+              if (isCollapsed) {
+                setCollapsedSessionProjects((prev) => {
+                  const next = new Set(prev);
+                  next.delete(project.name);
+                  return next;
+                });
+              } else if (onLoadMoreSessions) {
+                onLoadMoreSessions(project.name);
+              }
             }}
             disabled={isLoadingMore}
             className={cn(
@@ -768,12 +777,32 @@ export default function SidebarV2({
           >
             {isLoadingMore
               ? t('sidebar:sessions.loadingMore', { defaultValue: 'Loading more…' })
-              : remaining !== null && remaining > 0
-                ? t('sidebar:sessions.showMoreCount', {
-                    count: remaining,
-                    defaultValue: `Show more (${remaining})`,
-                  })
-                : t('sidebar:sessions.showMore', { defaultValue: 'Show more sessions' })}
+              : (() => {
+                  const totalMore = hiddenLoadedCount + (remaining !== null && remaining > 0 ? remaining : 0);
+                  return totalMore > 0
+                    ? t('sidebar:sessions.showMoreCount', {
+                        count: totalMore,
+                        defaultValue: `Show more (${totalMore})`,
+                      })
+                    : t('sidebar:sessions.showMore', { defaultValue: 'Show more sessions' });
+                })()}
+          </button>
+        ) : null}
+
+        {!isCollapsed && allSessions.length > COLLAPSED_SESSION_LIMIT ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setCollapsedSessionProjects((prev) => {
+                const next = new Set(prev);
+                next.add(project.name);
+                return next;
+              });
+            }}
+            className="block w-full rounded-md px-2 py-1 text-left text-[11px] transition-colors text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+          >
+            {t('sidebar:sessions.showLess', { defaultValue: 'Show less' })}
           </button>
         ) : null}
       </div>
