@@ -131,6 +131,7 @@ export const useCodeEditorDocument = ({ file, projectPath }: UseCodeEditorDocume
     saveSuccess,
     saveError,
     isBinary,
+    projectName: fileProjectName,
     handleSave,
     handleDownload,
   };

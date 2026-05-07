@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react';
+import { api } from '../../../../utils/api';
 import type { CodeEditorFile } from '../../types/types';
+import { isImageFile, isPdfFile } from '../../utils/binaryFile';
 
 type CodeEditorBinaryFileProps = {
   file: CodeEditorFile;
+  projectName?: string;
   isSidebar: boolean;
   isFullscreen: boolean;
   onClose: () => void;
@@ -10,19 +14,59 @@ type CodeEditorBinaryFileProps = {
   message: string;
 };
 
-export default function CodeEditorBinaryFile({
-  file,
-  isSidebar,
-  isFullscreen,
-  onClose,
-  onToggleFullscreen,
-  title,
-  message,
-}: CodeEditorBinaryFileProps) {
-  const iconBtn =
-    'flex h-7 w-7 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100';
+function useBlobUrl(projectName: string | undefined, filePath: string, enabled: boolean) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(enabled);
 
-  const binaryContent = (
+  useEffect(() => {
+    if (!enabled || !projectName) {
+      setLoading(false);
+      return;
+    }
+
+    let objectUrl: string | null = null;
+    let cancelled = false;
+
+    setLoading(true);
+    setError(false);
+
+    api.readFileBlob(projectName, filePath)
+      .then((res: Response) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then((blob: Blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setBlobUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [enabled, projectName, filePath]);
+
+  return { blobUrl, error, loading };
+}
+
+function PreviewSpinner() {
+  return (
+    <div className="flex h-full w-full items-center justify-center">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600 dark:border-neutral-600 dark:border-t-neutral-300" />
+    </div>
+  );
+}
+
+function FallbackContent({ title, message, onClose }: { title: string; message: string; onClose: () => void }) {
+  return (
     <div className="flex h-full w-full flex-col items-center justify-center bg-white p-8 dark:bg-neutral-950">
       <div className="flex max-w-md flex-col items-center gap-4 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-900">
@@ -55,6 +99,82 @@ export default function CodeEditorBinaryFile({
       </div>
     </div>
   );
+}
+
+function ImagePreview({ projectName, file, title, message, onClose }: {
+  projectName?: string;
+  file: CodeEditorFile;
+  title: string;
+  message: string;
+  onClose: () => void;
+}) {
+  const { blobUrl, error, loading } = useBlobUrl(projectName, file.path, true);
+  const [imgError, setImgError] = useState(false);
+
+  if (loading) return <PreviewSpinner />;
+  if (error || imgError || !blobUrl) {
+    return <FallbackContent title={title} message={message} onClose={onClose} />;
+  }
+
+  return (
+    <div className="flex h-full w-full items-center justify-center overflow-auto bg-neutral-50 p-4 dark:bg-neutral-900">
+      <img
+        src={blobUrl}
+        alt={file.name}
+        className="max-h-full max-w-full rounded object-contain"
+        onError={() => setImgError(true)}
+      />
+    </div>
+  );
+}
+
+function PdfPreview({ projectName, file, title, message, onClose }: {
+  projectName?: string;
+  file: CodeEditorFile;
+  title: string;
+  message: string;
+  onClose: () => void;
+}) {
+  const { blobUrl, error, loading } = useBlobUrl(projectName, file.path, true);
+
+  if (loading) return <PreviewSpinner />;
+  if (error || !blobUrl) {
+    return <FallbackContent title={title} message={message} onClose={onClose} />;
+  }
+
+  return (
+    <div className="h-full w-full bg-white dark:bg-neutral-950">
+      <iframe
+        src={blobUrl}
+        className="h-full w-full border-0"
+        title={`PDF: ${file.name}`}
+      />
+    </div>
+  );
+}
+
+export default function CodeEditorBinaryFile({
+  file,
+  projectName,
+  isSidebar,
+  isFullscreen,
+  onClose,
+  onToggleFullscreen,
+  title,
+  message,
+}: CodeEditorBinaryFileProps) {
+  const iconBtn =
+    'flex h-7 w-7 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100';
+
+  const isImage = isImageFile(file.name);
+  const isPdf = isPdfFile(file.name);
+  const canPreview = isImage || isPdf;
+
+  const previewContent = isImage
+    ? <ImagePreview projectName={projectName} file={file} title={title} message={message} onClose={onClose} />
+    : isPdf
+      ? <PdfPreview projectName={projectName} file={file} title={title} message={message} onClose={onClose} />
+      : <FallbackContent title={title} message={message} onClose={onClose} />;
 
   const headerTopBar = (
     <div className="flex flex-shrink-0 items-center justify-between border-b border-neutral-200 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-950">
@@ -110,7 +230,7 @@ export default function CodeEditorBinaryFile({
     return (
       <div className="flex h-full w-full flex-col bg-white dark:bg-neutral-950">
         {headerTopBar}
-        {binaryContent}
+        {previewContent}
       </div>
     );
   }
@@ -121,13 +241,17 @@ export default function CodeEditorBinaryFile({
 
   const innerClassName = isFullscreen
     ? 'bg-white dark:bg-neutral-950 flex flex-col w-full h-full'
-    : 'bg-white dark:bg-neutral-950 flex flex-col w-full h-full md:rounded-xl md:border md:border-neutral-200 dark:md:border-neutral-800 md:shadow-xl md:w-full md:max-w-2xl md:h-auto md:max-h-[60vh]';
+    : `bg-white dark:bg-neutral-950 flex flex-col w-full h-full md:rounded-xl md:border md:border-neutral-200 dark:md:border-neutral-800 md:shadow-xl ${
+      canPreview
+        ? 'md:w-full md:max-w-5xl md:h-[85vh] md:max-h-[85vh]'
+        : 'md:w-full md:max-w-2xl md:h-auto md:max-h-[60vh]'
+    }`;
 
   return (
     <div className={containerClassName}>
       <div className={innerClassName}>
         {headerTopBar}
-        {binaryContent}
+        {previewContent}
       </div>
     </div>
   );

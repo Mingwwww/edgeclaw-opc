@@ -56,6 +56,7 @@ export default function CodeEditor({
     saveSuccess,
     saveError,
     isBinary,
+    projectName,
     handleSave,
     handleDownload,
   } = useCodeEditorDocument({
@@ -165,6 +166,7 @@ export default function CodeEditor({
     return (
       <CodeEditorBinaryFile
         file={file}
+        projectName={projectName}
         isSidebar={isSidebar}
         isFullscreen={isFullscreen}
         onClose={onClose}
