@@ -66,9 +66,13 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   }, [provider]);
 
   useEffect(() => {
-    setPendingPermissionRequests((previous) =>
-      previous.filter((request) => !request.sessionId || request.sessionId === selectedSession?.id),
-    );
+    setPendingPermissionRequests((previous) => {
+      const next = previous.filter((request) => !request.sessionId || request.sessionId === selectedSession?.id);
+      // #region agent log
+      if (previous.length !== next.length) { fetch('http://127.0.0.1:7450/ingest/6d23a73d-7d80-486b-b66d-c1253f9689d3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5ad403'},body:JSON.stringify({sessionId:'5ad403',location:'useChatProviderState.ts:session-filter',message:'session switch filtered permissions',data:{selectedSessionId:selectedSession?.id,prevCount:previous.length,nextCount:next.length,removedIds:previous.filter(r=>!next.includes(r)).map(r=>({requestId:r.requestId,sessionId:r.sessionId}))},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{}); }
+      // #endregion
+      return next;
+    });
   }, [selectedSession?.id]);
 
   useEffect(() => {
