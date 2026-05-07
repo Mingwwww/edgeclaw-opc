@@ -1,19 +1,9 @@
-import type {
-  BetaContentBlock,
-  BetaWebSearchTool20250305,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import { getAPIProvider } from 'src/utils/model/providers.js'
 import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js'
 import { z } from 'zod/v4'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
-import { queryModelWithStreaming } from '../../services/api/claude.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
-import { createUserMessage } from '../../utils/messages.js'
-import { getMainLoopModel, getSmallFastModel } from '../../utils/model/model.js'
-import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
-import { asSystemPrompt } from '../../utils/systemPromptType.js'
+import { jsonStringify } from '../../utils/slowOperations.js'
 import { getWebSearchPrompt, WEB_SEARCH_TOOL_NAME } from './prompt.js'
 import {
   getToolUseSummary,
@@ -73,82 +63,6 @@ export type { WebSearchProgress } from '../../types/tools.js'
 
 import type { WebSearchProgress } from '../../types/tools.js'
 
-function makeToolSchema(input: Input): BetaWebSearchTool20250305 {
-  return {
-    type: 'web_search_20250305',
-    name: 'web_search',
-    allowed_domains: input.allowed_domains,
-    blocked_domains: input.blocked_domains,
-    max_uses: 8, // Hardcoded to 8 searches maximum
-  }
-}
-
-function makeOutputFromSearchResponse(
-  result: BetaContentBlock[],
-  query: string,
-  durationSeconds: number,
-): Output {
-  // The result is a sequence of these blocks:
-  // - text to start -- always?
-  // [
-  //    - server_tool_use
-  //    - web_search_tool_result
-  //    - text and citation blocks intermingled
-  //  ]+  (this block repeated for each search)
-
-  const results: (SearchResult | string)[] = []
-  let textAcc = ''
-  let inText = true
-
-  for (const block of result) {
-    if (block.type === 'server_tool_use') {
-      if (inText) {
-        inText = false
-        if (textAcc.trim().length > 0) {
-          results.push(textAcc.trim())
-        }
-        textAcc = ''
-      }
-      continue
-    }
-
-    if (block.type === 'web_search_tool_result') {
-      // Handle error case - content is a WebSearchToolResultError
-      if (!Array.isArray(block.content)) {
-        const errorMessage = `Web search error: ${block.content.error_code}`
-        logError(new Error(errorMessage))
-        results.push(errorMessage)
-        continue
-      }
-      // Success case - add results to our collection
-      const hits = block.content.map(r => ({ title: r.title, url: r.url }))
-      results.push({
-        tool_use_id: block.tool_use_id,
-        content: hits,
-      })
-    }
-
-    if (block.type === 'text') {
-      if (inText) {
-        textAcc += block.text
-      } else {
-        inText = true
-        textAcc = block.text
-      }
-    }
-  }
-
-  if (textAcc.length) {
-    results.push(textAcc.trim())
-  }
-
-  return {
-    query,
-    results,
-    durationSeconds,
-  }
-}
-
 export const WebSearchTool = buildTool({
   name: WEB_SEARCH_TOOL_NAME,
   searchHint: 'search the web for current information',
@@ -166,30 +80,7 @@ export const WebSearchTool = buildTool({
     return summary ? `Searching for ${summary}` : 'Searching the web'
   },
   isEnabled() {
-    const provider = getAPIProvider()
-    const model = getMainLoopModel()
-
-    // Enable for firstParty
-    if (provider === 'firstParty') {
-      return true
-    }
-
-    // Enable for Vertex AI with supported models (Claude 4.0+)
-    if (provider === 'vertex') {
-      const supportsWebSearch =
-        model.includes('claude-opus-4') ||
-        model.includes('claude-sonnet-4') ||
-        model.includes('claude-haiku-4')
-
-      return supportsWebSearch
-    }
-
-    // Foundry only ships models that already support Web Search
-    if (provider === 'foundry') {
-      return true
-    }
-
-    return false
+    return true
   },
   get inputSchema(): InputSchema {
     return inputSchema()
@@ -254,149 +145,96 @@ export const WebSearchTool = buildTool({
   async call(input, context, _canUseTool, _parentMessage, onProgress) {
     const startTime = performance.now()
     const { query } = input
-    const userMessage = createUserMessage({
-      content: 'Perform a web search for the query: ' + query,
-    })
-    const toolSchema = makeToolSchema(input)
 
-    const useHaiku = getFeatureValue_CACHED_MAY_BE_STALE(
-      'tengu_plum_vx3',
-      false,
-    )
-
-    const appState = context.getAppState()
-    const queryStream = queryModelWithStreaming({
-      messages: [userMessage],
-      systemPrompt: asSystemPrompt([
-        'You are an assistant for performing a web search tool use',
-      ]),
-      thinkingConfig: useHaiku
-        ? { type: 'disabled' as const }
-        : context.options.thinkingConfig,
-      tools: [],
-      signal: context.abortController.signal,
-      options: {
-        getToolPermissionContext: async () => appState.toolPermissionContext,
-        model: useHaiku ? getSmallFastModel() : context.options.mainLoopModel,
-        toolChoice: useHaiku ? { type: 'tool', name: 'web_search' } : undefined,
-        isNonInteractiveSession: context.options.isNonInteractiveSession,
-        hasAppendSystemPrompt: !!context.options.appendSystemPrompt,
-        extraToolSchemas: [toolSchema],
-        querySource: 'web_search_tool',
-        agents: context.options.agentDefinitions.activeAgents,
-        mcpTools: [],
-        agentId: context.agentId,
-        effortValue: appState.effortValue,
-      },
-    })
-
-    const allContentBlocks: BetaContentBlock[] = []
-    let currentToolUseId = null
-    let currentToolUseJson = ''
-    let progressCounter = 0
-    const toolUseQueries = new Map() // Map of tool_use_id to query
-
-    for await (const event of queryStream) {
-      if (event.type === 'assistant') {
-        allContentBlocks.push(...event.message.content)
-        continue
-      }
-
-      // Track tool use ID when server_tool_use starts
-      if (
-        event.type === 'stream_event' &&
-        event.event?.type === 'content_block_start'
-      ) {
-        const contentBlock = event.event.content_block
-        if (contentBlock && contentBlock.type === 'server_tool_use') {
-          currentToolUseId = contentBlock.id
-          currentToolUseJson = ''
-          // Note: The ServerToolUseBlock doesn't contain input.query
-          // The actual query comes through input_json_delta events
-          continue
-        }
-      }
-
-      // Accumulate JSON for current tool use
-      if (
-        currentToolUseId &&
-        event.type === 'stream_event' &&
-        event.event?.type === 'content_block_delta'
-      ) {
-        const delta = event.event.delta
-        if (delta?.type === 'input_json_delta' && delta.partial_json) {
-          currentToolUseJson += delta.partial_json
-
-          // Try to extract query from partial JSON for progress updates
-          try {
-            // Look for a complete query field
-            const queryMatch = currentToolUseJson.match(
-              /"query"\s*:\s*"((?:[^"\\]|\\.)*)"/,
-            )
-            if (queryMatch && queryMatch[1]) {
-              // The regex properly handles escaped characters
-              const query = jsonParse('"' + queryMatch[1] + '"')
-
-              if (
-                !toolUseQueries.has(currentToolUseId) ||
-                toolUseQueries.get(currentToolUseId) !== query
-              ) {
-                toolUseQueries.set(currentToolUseId, query)
-                progressCounter++
-                if (onProgress) {
-                  onProgress({
-                    toolUseID: `search-progress-${progressCounter}`,
-                    data: {
-                      type: 'query_update',
-                      query,
-                    },
-                  })
-                }
-              }
-            }
-          } catch {
-            // Ignore parsing errors for partial JSON
-          }
-        }
-      }
-
-      // Yield progress when search results come in
-      if (
-        event.type === 'stream_event' &&
-        event.event?.type === 'content_block_start'
-      ) {
-        const contentBlock = event.event.content_block
-        if (contentBlock && contentBlock.type === 'web_search_tool_result') {
-          // Get the actual query that was used for this search
-          const toolUseId = contentBlock.tool_use_id
-          const actualQuery = toolUseQueries.get(toolUseId) || query
-          const content = contentBlock.content
-
-          progressCounter++
-          if (onProgress) {
-            onProgress({
-              toolUseID: toolUseId || `search-progress-${progressCounter}`,
-              data: {
-                type: 'search_results_received',
-                resultCount: Array.isArray(content) ? content.length : 0,
-                query: actualQuery,
-              },
-            })
-          }
-        }
+    const tavilyApiKey = process.env.TAVILY_API_KEY
+    if (!tavilyApiKey) {
+      return {
+        data: {
+          query,
+          results: ['Error: TAVILY_API_KEY environment variable is not set. Please set it to enable web search.'],
+          durationSeconds: 0,
+        },
       }
     }
 
-    // Process the final result
-    const endTime = performance.now()
-    const durationSeconds = (endTime - startTime) / 1000
+    if (onProgress) {
+      onProgress({
+        toolUseID: 'search-progress-1',
+        data: { type: 'query_update' as const, query },
+      })
+    }
 
-    const data = makeOutputFromSearchResponse(
-      allContentBlocks,
+    const body: Record<string, unknown> = {
       query,
-      durationSeconds,
-    )
-    return { data }
+      max_results: 8,
+      include_answer: true,
+    }
+    if (input.allowed_domains?.length) body.include_domains = input.allowed_domains
+    if (input.blocked_domains?.length) body.exclude_domains = input.blocked_domains
+
+    try {
+      const res = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: tavilyApiKey, ...body }),
+        signal: context.abortController.signal,
+      })
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => res.statusText)
+        logError(new Error(`Tavily API error ${res.status}: ${errText}`))
+        return {
+          data: {
+            query,
+            results: [`Web search error: Tavily API returned ${res.status} - ${errText}`],
+            durationSeconds: (performance.now() - startTime) / 1000,
+          },
+        }
+      }
+
+      const json = await res.json() as {
+        answer?: string
+        results?: { title: string; url: string; content?: string }[]
+      }
+
+      const results: (SearchResult | string)[] = []
+      if (json.answer) results.push(json.answer)
+      if (json.results?.length) {
+        results.push({
+          tool_use_id: 'tavily-search',
+          content: json.results.map(r => ({ title: r.title, url: r.url })),
+        })
+      }
+
+      if (onProgress) {
+        onProgress({
+          toolUseID: 'search-progress-2',
+          data: {
+            type: 'search_results_received' as const,
+            resultCount: json.results?.length ?? 0,
+            query,
+          },
+        })
+      }
+
+      const endTime = performance.now()
+      return {
+        data: {
+          query,
+          results,
+          durationSeconds: (endTime - startTime) / 1000,
+        },
+      }
+    } catch (err) {
+      logError(err instanceof Error ? err : new Error(String(err)))
+      return {
+        data: {
+          query,
+          results: [`Web search error: ${err instanceof Error ? err.message : String(err)}`],
+          durationSeconds: (performance.now() - startTime) / 1000,
+        },
+      }
+    }
   },
   mapToolResultToToolResultBlockParam(output, toolUseID) {
     const { query, results } = output

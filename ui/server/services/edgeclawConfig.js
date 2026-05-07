@@ -588,6 +588,11 @@ export function buildRuntimeEnv(config) {
     env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
   }
 
+  const tavilyKey = mainParams.tavilyApiKey ?? mainParams.tavily_api_key ?? process.env.TAVILY_API_KEY;
+  if (tavilyKey) {
+    env.TAVILY_API_KEY = String(tavilyKey);
+  }
+
   const memory = resolveModel(normalized, normalized.memory.model, { allowMissing: true });
   if (memory) {
     env.EDGECLAW_MEMORY_MODEL = memory.model;
