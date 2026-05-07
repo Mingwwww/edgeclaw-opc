@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { parse as parseYaml } from 'yaml'
+import { DEFAULT_TOKEN_SAVER, DEFAULT_AUTO_ORCHESTRATE } from './ccr-defaults'
 
 export type EdgeClawProviderType = 'openai-chat' | 'openai-responses' | 'anthropic' | 'litellm' | 'ccr'
 
@@ -319,7 +320,7 @@ export function buildCcrConfigFromEdgeClawConfig(config = loadEdgeClawConfig()) 
   }))
   const router: any = (config as any).router ?? {}
   const routes = router.routes ?? {}
-  const tokenSaver = structuredClone(router.tokenSaver ?? { enabled: false })
+  const tokenSaver = deepMerge(structuredClone(DEFAULT_TOKEN_SAVER) as any, router.tokenSaver ?? {}) as any
   if (tokenSaver.judgeModel) {
     const judge = resolveEdgeClawModel(config, tokenSaver.judgeModel)
     if (judge) {
@@ -333,7 +334,7 @@ export function buildCcrConfigFromEdgeClawConfig(config = loadEdgeClawConfig()) 
       if (resolved) tier.model = `${resolved.providerId},${resolved.model}`
     }
   }
-  const autoOrchestrate = structuredClone(router.autoOrchestrate ?? { enabled: false })
+  const autoOrchestrate = deepMerge(structuredClone(DEFAULT_AUTO_ORCHESTRATE) as any, router.autoOrchestrate ?? {}) as any
   if (autoOrchestrate.mainAgentModel) {
     const resolved = resolveEdgeClawModel(config, autoOrchestrate.mainAgentModel)
     if (resolved) autoOrchestrate.mainAgentModel = `${resolved.providerId},${resolved.model}`

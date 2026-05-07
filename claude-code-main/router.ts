@@ -18,6 +18,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs'
 import { execSync } from 'child_process'
 import { resolve, dirname } from 'path'
+import { DEFAULT_ROUTER_CONFIG } from './ccr-defaults'
 
 const DIR = dirname(new URL(import.meta.url).pathname)
 
@@ -64,10 +65,17 @@ try {
   process.exit(1)
 }
 
+const mergedRouter = config.Router
+  ? { ...DEFAULT_ROUTER_CONFIG, ...config.Router,
+      tokenSaver: { ...DEFAULT_ROUTER_CONFIG.tokenSaver, ...config.Router.tokenSaver },
+      autoOrchestrate: { ...DEFAULT_ROUTER_CONFIG.autoOrchestrate, ...config.Router.autoOrchestrate },
+    }
+  : { ...DEFAULT_ROUTER_CONFIG }
+
 const server = new Server({
   initialConfig: {
     providers: config.Providers,
-    Router: config.Router,
+    Router: mergedRouter,
     tokenStats: config.tokenStats,
     API_TIMEOUT_MS: config.API_TIMEOUT_MS,
     HOST: config.HOST || '127.0.0.1',

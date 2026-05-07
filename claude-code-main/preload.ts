@@ -2,6 +2,7 @@ import { plugin } from 'bun';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { execSync } from 'child_process';
 import { resolve, dirname } from 'path';
+import { DEFAULT_ROUTER_CONFIG } from './ccr-defaults';
 
 // Stub the bun:bundle module which is only available at build/bundle time.
 // feature() returns false for most flags so gated code paths are skipped at
@@ -133,10 +134,16 @@ if (shouldInstallCcrInterceptor()) {
         const CCR = require(cjsPath);
         const Server = CCR.default;
 
+        const mergedRouter = config.Router
+          ? { ...DEFAULT_ROUTER_CONFIG, ...config.Router,
+              tokenSaver: { ...DEFAULT_ROUTER_CONFIG.tokenSaver, ...config.Router.tokenSaver },
+              autoOrchestrate: { ...DEFAULT_ROUTER_CONFIG.autoOrchestrate, ...config.Router.autoOrchestrate },
+            }
+          : { ...DEFAULT_ROUTER_CONFIG };
         const server = new Server({
           initialConfig: {
             providers: config.Providers,
-            Router: config.Router,
+            Router: mergedRouter,
             tokenStats: config.tokenStats,
             API_TIMEOUT_MS: config.API_TIMEOUT_MS,
             HOST: config.HOST || '127.0.0.1',
