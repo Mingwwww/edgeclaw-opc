@@ -150,6 +150,7 @@ function ChatInterfaceV2({
     showCommandMenu,
     selectedCommandIndex,
     resetCommandMenuState,
+    dismissCommandMenu,
     handleCommandSelect,
     handleToggleCommandMenu,
     showFileDropdown,
@@ -357,7 +358,7 @@ function ChatInterfaceV2({
       filteredCommands={filteredCommands}
       selectedCommandIndex={selectedCommandIndex}
       onCommandSelect={handleCommandSelect}
-      onCloseCommandMenu={resetCommandMenuState}
+      onCloseCommandMenu={dismissCommandMenu}
       isCommandMenuOpen={showCommandMenu}
       frequentCommands={commandQuery ? [] : frequentCommands}
       onToggleCommandMenu={handleToggleCommandMenu}
