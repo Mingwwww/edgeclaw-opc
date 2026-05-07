@@ -20,6 +20,7 @@ type CachedConnection = {
   onDisconnected?: () => void
 }
 
+const CACHE_KEY_LAUNCHED = '__playwright_launched__'
 const cachedByCdpUrl = new Map<string, CachedConnection>()
 const connectingByCdpUrl = new Map<string, Promise<BrowserSession>>()
 
@@ -31,6 +32,31 @@ function isConnectionAlive(cached: CachedConnection): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Fallback: let Playwright manage Chrome directly (no external CDP).
+ * Works around Chrome 147+ breaking connectOverCDP's setDownloadBehavior.
+ */
+async function launchManagedBrowser(): Promise<BrowserSession> {
+  const { chromium } = await import('playwright-core')
+  const browser = await chromium.launch({
+    channel: 'chrome',
+    headless: false,
+    timeout: CDP_CONNECT_TIMEOUT,
+  })
+  const context = browser.contexts()[0] ?? await browser.newContext()
+
+  const onDisconnected = () => {
+    const current = cachedByCdpUrl.get(CACHE_KEY_LAUNCHED)
+    if (current?.browser === browser) {
+      cachedByCdpUrl.delete(CACHE_KEY_LAUNCHED)
+    }
+  }
+  cachedByCdpUrl.set(CACHE_KEY_LAUNCHED, { browser, context, onDisconnected })
+  browser.on('disconnected', onDisconnected)
+
+  return { browser, context }
 }
 
 async function connectWithRetry(cdpUrl: string): Promise<BrowserSession> {
@@ -75,18 +101,24 @@ async function connectWithRetry(cdpUrl: string): Promise<BrowserSession> {
 }
 
 /**
- * Get or create a Playwright CDP session.
+ * Get or create a Playwright browser session.
  *
- * Design inspired by OpenClaw pw-session.ts:
- * - cachedByCdpUrl: reuse existing connections
- * - connectingByCdpUrl: deduplicate in-flight connects
- * - disconnected handler only clears cache, never kills Chrome
- * - No launchPersistentContext fallback (CDP is the only path)
+ * Strategy (in order):
+ * 1. Reuse cached connection
+ * 2. connectOverCDP to external Chrome (CDP_URL or globalChrome)
+ * 3. Fallback: chromium.launch({ channel: 'chrome' }) — Playwright-managed
  */
 export async function getOrCreateSession(): Promise<BrowserSession> {
+  // Check launched-mode cache first
+  const launchedCached = cachedByCdpUrl.get(CACHE_KEY_LAUNCHED)
+  if (launchedCached && isConnectionAlive(launchedCached)) {
+    return { browser: launchedCached.browser, context: launchedCached.context }
+  }
+
   const rawCdpUrl = process.env.CDP_URL ?? await ensureGlobalChrome()
   if (!rawCdpUrl) {
-    throw new Error('[browser-use] No Chrome available. Set CDP_URL or install Chrome.')
+    // No external Chrome available — fall back to Playwright-managed launch
+    return launchManagedBrowser()
   }
   const cdpUrl = normalizeCdpUrl(rawCdpUrl)
 
@@ -102,9 +134,15 @@ export async function getOrCreateSession(): Promise<BrowserSession> {
   const inflight = connectingByCdpUrl.get(cdpUrl)
   if (inflight) return inflight
 
-  const pending = connectWithRetry(cdpUrl).finally(() => {
-    connectingByCdpUrl.delete(cdpUrl)
-  })
+  const pending = connectWithRetry(cdpUrl)
+    .catch(() => {
+      // connectOverCDP failed (e.g. Chrome 147 setDownloadBehavior issue)
+      // Fall back to Playwright-managed Chrome
+      return launchManagedBrowser()
+    })
+    .finally(() => {
+      connectingByCdpUrl.delete(cdpUrl)
+    })
   connectingByCdpUrl.set(cdpUrl, pending)
   return pending
 }
