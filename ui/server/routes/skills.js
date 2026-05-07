@@ -784,6 +784,85 @@ router.post('/import-upload', upload.array('files', MAX_FILE_COUNT), async (req,
 });
 
 // ---------------------------------------------------------------------------
+// Scan a parent directory for skill subfolders (batch import support)
+// ---------------------------------------------------------------------------
+
+router.post('/scan', async (req, res) => {
+  try {
+    const { parentPath } = req.body || {};
+    if (typeof parentPath !== 'string' || !parentPath.trim()) {
+      return res.status(400).json({ error: 'parentPath is required' });
+    }
+    const resolved = path.resolve(expandHome(parentPath.trim()));
+    let entries;
+    try {
+      entries = await fs.readdir(resolved, { withFileTypes: true });
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        return res.status(404).json({ error: `Directory not found: ${resolved}` });
+      }
+      throw e;
+    }
+
+    const folders = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      let isDir = entry.isDirectory();
+      if (!isDir) {
+        try {
+          const target = await fs.stat(path.join(resolved, entry.name));
+          isDir = target.isDirectory();
+        } catch { isDir = false; }
+      }
+      if (!isDir) continue;
+
+      const subDir = path.join(resolved, entry.name);
+      let hasSkillMd = false;
+      let meta = null;
+      try {
+        await fs.access(path.join(subDir, 'SKILL.md'));
+        hasSkillMd = true;
+        meta = await readSkillMeta(subDir);
+      } catch { /* no SKILL.md */ }
+
+      let fileCount = 0;
+      let totalSize = 0;
+      if (hasSkillMd) {
+        try {
+          const files = await fs.readdir(subDir, { recursive: true, withFileTypes: false });
+          for (const f of files) {
+            try {
+              const st = await fs.stat(path.join(subDir, f));
+              if (st.isFile()) { fileCount++; totalSize += st.size; }
+            } catch { /* skip */ }
+          }
+        } catch { /* skip */ }
+      }
+
+      folders.push({
+        folderName: entry.name,
+        hasSkillMd,
+        name: meta?.name || null,
+        description: meta?.description || null,
+        sourcePath: subDir,
+        fileCount,
+        totalSize,
+      });
+    }
+
+    folders.sort((a, b) => {
+      if (a.hasSkillMd !== b.hasSkillMd) return a.hasSkillMd ? -1 : 1;
+      return a.folderName.localeCompare(b.folderName);
+    });
+
+    res.json({ parentPath: resolved, folders });
+  } catch (e) {
+    console.error('[skills/scan]', e);
+    res.status(500).json({ error: 'Scan failed', message: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // ClawHub: search & install
 // ---------------------------------------------------------------------------
 
