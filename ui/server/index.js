@@ -2625,21 +2625,6 @@ async function startServer() {
                     }
                 }
 
-                // Start global Chrome for browser-use CDP sharing
-                if (!process.env.CDP_URL) {
-                    try {
-                        const { ensureGlobalChrome, startChromeHealthCheck } = await import('./utils/globalChrome.js');
-                        const cdpUrl = await ensureGlobalChrome();
-                        if (cdpUrl) {
-                            process.env.CDP_URL = cdpUrl;
-                            startChromeHealthCheck(30_000);
-                            console.log(`${c.ok('[BROWSER]')} Global Chrome ready at ${c.bright(cdpUrl)}`);
-                        }
-                    } catch (err) {
-                        console.warn(`${c.warn('[BROWSER]')} Global Chrome not started: ${err.message}`);
-                    }
-                }
-
                 console.log(`${c.info('[INFO]')} To run in development mode with hot-module replacement, go to http://${DISPLAY_HOST}:${VITE_PORT}`);
 
                 server.listen(SERVER_PORT, HOST, async () => {

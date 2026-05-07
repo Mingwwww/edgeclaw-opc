@@ -206,3 +206,35 @@ export function shutdownGlobalChrome() {
     chromeProcess = null;
   }
 }
+
+let _cdpInitPromise = null;
+
+/**
+ * Lazy CDP initializer — starts Chrome only on first call, then caches the URL.
+ * Subsequent calls return immediately if Chrome is already healthy.
+ * Serializes concurrent callers so Chrome is launched at most once.
+ */
+export async function ensureCDPUrl() {
+  if (process.env.CDP_URL && await isCDPHealthy()) {
+    return process.env.CDP_URL;
+  }
+
+  if (_cdpInitPromise) return _cdpInitPromise;
+
+  _cdpInitPromise = (async () => {
+    try {
+      const cdpUrl = await ensureGlobalChrome();
+      if (cdpUrl) {
+        process.env.CDP_URL = cdpUrl;
+        startChromeHealthCheck(30_000);
+        console.log(`[BROWSER] Global Chrome ready (lazy) at ${cdpUrl}`);
+        return cdpUrl;
+      }
+      return null;
+    } finally {
+      _cdpInitPromise = null;
+    }
+  })();
+
+  return _cdpInitPromise;
+}

@@ -229,8 +229,8 @@ export function buildRuntimeEnvFromConfig(config: EdgeClawConfig): Record<string
     VITE_CONTEXT_WINDOW: String(config.runtime?.contextWindow ?? 160000),
     API_TIMEOUT_MS: String(config.runtime?.apiTimeoutMs ?? 120000),
     EDGECLAW_MEMORY_ENABLED: config.memory?.enabled === false ? '0' : '1',
-    CCR_ENABLED: config.router?.enabled ? '1' : '0',
-    CCR_DISABLED: config.router?.enabled ? '0' : '1',
+    CCR_ENABLED: process.env.CCR_ENABLED || (config.router?.enabled ? '1' : '0'),
+    CCR_DISABLED: process.env.CCR_DISABLED || (config.router?.enabled ? '0' : '1'),
     GATEWAY_ENABLED: config.gateway?.enabled ? '1' : '0',
     GATEWAY_HOME: expandTilde(config.gateway?.home),
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxyPort}`,
@@ -308,16 +308,22 @@ function routeToCcr(config: EdgeClawConfig, route: any): string | undefined {
 }
 
 export function buildCcrConfigFromEdgeClawConfig(config = loadEdgeClawConfig()) {
-  const providers = Object.entries(config.models?.providers ?? {}).map(([providerId, provider]) => ({
-    name: providerId,
-    api_base_url: providerEndpoint(provider),
-    api_key: provider.apiKey,
-    models: Object.values(config.models?.entries ?? {})
-      .filter(entry => entry.provider === providerId)
-      .map(entry => entry.name)
-      .filter(Boolean),
-    ...(provider.transformer ? { transformer: provider.transformer } : {}),
-  }))
+  const providers = Object.entries(config.models?.providers ?? {}).map(([providerId, provider]) => {
+    let transformer = provider.transformer
+    if (!transformer && provider.type === 'anthropic') {
+      transformer = { use: [['Anthropic']] }
+    }
+    return {
+      name: providerId,
+      api_base_url: providerEndpoint(provider),
+      api_key: provider.apiKey,
+      models: Object.values(config.models?.entries ?? {})
+        .filter(entry => entry.provider === providerId)
+        .map(entry => entry.name)
+        .filter(Boolean),
+      ...(transformer ? { transformer } : {}),
+    }
+  })
   const router: any = (config as any).router ?? {}
   const routes = router.routes ?? {}
   const tokenSaver = deepMerge(structuredClone(DEFAULT_TOKEN_SAVER) as any, router.tokenSaver ?? {}) as any
