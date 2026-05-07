@@ -84,6 +84,13 @@ export default function FilesV2({ selectedProject, onFileOpen, onClose }: FilesV
   const inlineInputRef = useRef<HTMLInputElement>(null);
   const escapePressedRef = useRef(false);
 
+  useEffect(() => {
+    setExpanded(new Set());
+    setActivePath(null);
+    setContextMenu(null);
+    setInlineEdit(null);
+  }, [selectedProject?.name]);
+
   const flat = useMemo(() => flatten(files, expanded), [files, expanded]);
 
   const projectName = selectedProject?.name ?? '';

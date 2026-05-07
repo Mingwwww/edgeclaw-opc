@@ -1033,6 +1033,7 @@ function SplitBody(props: SplitBodyProps) {
             style={{ minWidth: `${FILES_TREE_MIN_WIDTH}px` }}
           >
             <FilesV2
+              key={selectedProject?.name ?? ''}
               selectedProject={selectedProject}
               onFileOpen={handleFileOpen}
               onClose={() => setActiveTab('chat')}
