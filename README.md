@@ -136,6 +136,69 @@ cd ui
 cloudcli status
 ```
 
+## Browser-Use (浏览器自动化)
+
+Agent 内置了 `browser-use` MCP 工具，可以驱动 Chrome 进行网页交互。
+
+### 必需依赖
+
+| 依赖 | 版本要求 | 说明 |
+|------|---------|------|
+| Google Chrome | 任意版本 | Playwright 管理模式需要系统安装 Chrome |
+| playwright-core | 已内置 | `claude-code-main` 的依赖，`bun install` 时自动安装 |
+| Node.js | >= 18 | 运行 UI Server 的 globalChrome 管理器 |
+
+### Chrome 搜索路径
+
+程序按顺序查找 Chrome 可执行文件：
+
+**macOS:**
+1. `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
+2. `/Applications/Chromium.app/Contents/MacOS/Chromium`
+3. `/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge`
+
+**Linux:**
+1. `/usr/bin/google-chrome`
+2. `/usr/bin/chromium-browser`
+3. `/usr/bin/chromium`
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `CDP_URL` | 自动管理 | 外部 Chrome CDP 地址，一般无需手动设置 |
+| `BROWSER_HEADLESS` | `0` | 设为 `1` 强制 headless 模式 |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Chrome 用户数据和锁文件的父目录 |
+
+### 容器 / 无 GUI 服务器部署
+
+在没有桌面环境的 Linux 机器或 Docker 容器中，浏览器会自动切换到 headless 模式（检测 `DISPLAY` 环境变量或 `BROWSER_HEADLESS=1`）。
+
+如果需要在容器中运行非 headless 浏览器（例如调试用途），需要：
+
+1. 安装 Xvfb 和 Chrome 系统库：
+   ```bash
+   apt-get install -y xvfb google-chrome-stable \
+     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+     libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
+     libxrandr2 libgbm1 libpango-1.0-0 libasound2
+   ```
+2. 在启动命令前加 `xvfb-run`，或设置 `DISPLAY=:99` 并后台运行 `Xvfb :99`
+
+### Chrome 版本兼容性
+
+Chrome 147+ 与 Playwright 的 `connectOverCDP` 存在已知不兼容（`setDownloadBehavior` 协议变更）。程序会自动检测 Chrome 版本，对 >= 147 的 Chrome 跳过 CDP 连接，改用 Playwright 直接管理浏览器，无需手动干预。
+
+### 常见故障排查
+
+| 现象 | 可能原因 | 解决方案 |
+|------|---------|---------|
+| "Chrome not found" | 系统未安装 Chrome | 安装 Chrome 或 Chromium |
+| 浏览器打开后无响应 | Chrome 147+ CDP 不兼容 | 已自动修复，确保使用最新代码 |
+| 容器中启动失败 | 缺少 `DISPLAY` 或 headless 未启用 | 设置 `BROWSER_HEADLESS=1` 或安装 Xvfb |
+| "failed to acquire lock" | 上次异常退出残留锁文件 | 删除 `~/.claude/browser-use-profile/chrome-cdp.lock` |
+| 端口 9222 被占用 | 其他 Chrome 实例占用 CDP 端口 | `lsof -ti :9222 \| xargs kill` |
+
 ## 安全说明
 
 - 用户密钥只放在 `~/.edgeclaw/config.yaml`
