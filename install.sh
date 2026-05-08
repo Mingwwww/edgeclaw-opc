@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # Politdeck one-line installer for macOS
-# Usage: curl -fsSL https://raw.githubusercontent.com/siteboon/claudecodeui/feat/onboarding-llm-setup/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/Mingwwww/edgeclaw-opc/feat/onboarding-llm-setup/install.sh | bash
 #
 # Installs to: ~/.edgeclaw/app/
 # Data dir:    ~/.edgeclaw/
 # Config:      ~/.edgeclaw/config.yaml
 # CLI symlink: /usr/local/bin/politdeck
 
-REPO_URL="https://github.com/siteboon/claudecodeui.git"
+REPO_URL="https://github.com/Mingwwww/edgeclaw-opc.git"
 INSTALL_DIR="$HOME/.edgeclaw/app"
 BIN_LINK="/usr/local/bin/politdeck"
 BRANCH="feat/onboarding-llm-setup"
