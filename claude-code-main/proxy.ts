@@ -78,7 +78,9 @@ function joinEndpoint(baseUrl: string, endpoint: string): string {
 function providerChatUrl(): string {
   if (UPSTREAM_TYPE === 'anthropic') return joinEndpoint(UPSTREAM_URL, '/v1/messages')
   if (UPSTREAM_TYPE === 'openai-responses') return joinEndpoint(UPSTREAM_URL, '/responses')
-  return joinEndpoint(UPSTREAM_URL, '/chat/completions')
+  const base = UPSTREAM_URL.replace(/\/+$/, '')
+  const hasV1 = /\/v1\/?$/i.test(base)
+  return hasV1 ? `${base}/chat/completions` : `${base}/v1/chat/completions`
 }
 
 // ─── CCR (Claude Code Router) integration ───
