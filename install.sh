@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Politdeck one-line installer for macOS
-# Usage: curl -fsSL https://raw.githubusercontent.com/siteboon/claudecodeui/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/siteboon/claudecodeui/feat/onboarding-llm-setup/install.sh | bash
 #
 # Installs to: ~/.edgeclaw/app/
 # Data dir:    ~/.edgeclaw/
