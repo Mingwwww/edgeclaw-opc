@@ -112,7 +112,7 @@ echo ""
 # -------------------------------------------------------------------
 echo "Installing dependencies..."
 cd "$INSTALL_DIR/ui"
-npm install --omit=dev --no-audit --no-fund --loglevel=error 2>&1 | tail -1 || true
+HUSKY=0 npm install --omit=dev --no-audit --no-fund --loglevel=error 2>&1 | tail -1 || true
 ok "Dependencies installed"
 echo ""
 
@@ -123,16 +123,24 @@ echo "Setting up CLI command..."
 CLI_TARGET="$INSTALL_DIR/ui/server/cli.js"
 
 if [[ -L "$BIN_LINK" ]]; then
-  rm "$BIN_LINK"
+  rm -f "$BIN_LINK" 2>/dev/null || sudo rm -f "$BIN_LINK"
 fi
 
 if [[ -w "$(dirname "$BIN_LINK")" ]]; then
   ln -sf "$CLI_TARGET" "$BIN_LINK"
   ok "politdeck command linked to ${DIM}${BIN_LINK}${RESET}"
-else
-  warn "Need permission to create ${BIN_LINK}"
+elif sudo -n true 2>/dev/null; then
   sudo ln -sf "$CLI_TARGET" "$BIN_LINK"
   ok "politdeck command linked to ${DIM}${BIN_LINK}${RESET}"
+else
+  LOCAL_BIN="$HOME/.local/bin"
+  mkdir -p "$LOCAL_BIN"
+  ln -sf "$CLI_TARGET" "$LOCAL_BIN/politdeck"
+  ok "politdeck command linked to ${DIM}${LOCAL_BIN}/politdeck${RESET}"
+  if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
+    warn "Add to your shell profile:  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  fi
+  BIN_LINK="$LOCAL_BIN/politdeck"
 fi
 echo ""
 
