@@ -43,7 +43,7 @@ import os from 'os';
 import http from 'http';
 import cors from 'cors';
 import { promises as fsPromises } from 'fs';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import pty from 'node-pty';
 import fetch from 'node-fetch';
 import mime from 'mime-types';
@@ -2639,6 +2639,12 @@ async function startServer() {
                     console.log(`${c.info('[INFO]')} Installed at: ${c.dim(appInstallPath)}`);
                     console.log(`${c.tip('[TIP]')}  Run "cloudcli status" for full configuration details`);
                     console.log('');
+
+                    const serverUrl = `http://${DISPLAY_HOST === '0.0.0.0' ? 'localhost' : DISPLAY_HOST}:${SERVER_PORT}`;
+                    const openCmd = process.platform === 'darwin' ? 'open'
+                                  : process.platform === 'win32' ? 'start'
+                                  : 'xdg-open';
+                    exec(`${openCmd} "${serverUrl}"`, () => {});
 
                     // Start watching the projects folder for changes
                     await setupProjectsWatcher();

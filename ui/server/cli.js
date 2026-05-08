@@ -18,7 +18,6 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { exec } from 'child_process';
 import {
     getEdgeClawConfigFilePath,
     getMissingEdgeClawEnvKeys,
@@ -220,13 +219,6 @@ async function updatePackage() {
         console.error(`${c.error('[ERROR]')} Update failed: ${e.message}`);
         console.log(`${c.tip('[TIP]')} Try running manually: npm update -g politdeck`);
     }
-}
-
-function openBrowser(url) {
-    const cmd = process.platform === 'darwin' ? 'open'
-              : process.platform === 'win32' ? 'start'
-              : 'xdg-open';
-    exec(`${cmd} "${url}"`, () => {});
 }
 
 // Start the server with preflight checks
