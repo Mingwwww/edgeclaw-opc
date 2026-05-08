@@ -103,6 +103,109 @@ router.post('/reload', async (_req, res) => {
   }
 });
 
+router.get('/provider', (_req, res) => {
+  try {
+    const record = readEdgeClawConfigFile();
+    const config = record.config;
+    if (!config?.models?.providers) {
+      return res.json({ exists: false, provider: null });
+    }
+    const providers = config.models.providers;
+    const providerId = Object.keys(providers)[0];
+    if (!providerId) return res.json({ exists: false, provider: null });
+
+    const provider = providers[providerId] || {};
+    const entries = config.models?.entries || {};
+    const defaultEntry = entries.default || entries[Object.keys(entries)[0]] || {};
+
+    res.json({
+      exists: true,
+      provider: {
+        type: provider.type || '',
+        baseUrl: provider.baseUrl || '',
+        apiKey: provider.apiKey || '',
+        model: defaultEntry.name || '',
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+router.post('/test-connection', async (req, res) => {
+  const { providerType, baseUrl, apiKey, model } = req.body || {};
+  if (!baseUrl || !apiKey || !model) {
+    return res.status(400).json({ ok: false, error: 'baseUrl, apiKey, and model are required' });
+  }
+
+  const type = providerType || 'anthropic';
+  const timeout = 10_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    let url;
+    let fetchOptions;
+
+    if (type === 'anthropic') {
+      url = `${baseUrl.replace(/\/+$/, '')}/v1/messages`;
+      fetchOptions = {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'Hi' }],
+        }),
+        signal: controller.signal,
+      };
+    } else {
+      const base = baseUrl.replace(/\/+$/, '');
+      const hasV1 = /\/v1\/?$/i.test(base);
+      url = hasV1 ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
+      fetchOptions = {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'Hi' }],
+        }),
+        signal: controller.signal,
+      };
+    }
+
+    const response = await fetch(url, fetchOptions);
+    clearTimeout(timer);
+
+    if (response.ok) {
+      return res.json({ ok: true, message: `Connected successfully — Model ${model} is available.` });
+    }
+
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (body?.error?.message) detail = body.error.message;
+      else if (body?.error?.type) detail = `${body.error.type}: ${body.error.message || ''}`;
+    } catch { /* ignore parse errors */ }
+
+    return res.json({ ok: false, error: `${detail}` });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      return res.json({ ok: false, error: `Connection timed out after ${timeout / 1000}s. Check your network and API URL.` });
+    }
+    return res.json({ ok: false, error: err.message || String(err) });
+  }
+});
+
 router.post('/open', async (_req, res) => {
   const configPath = getEdgeClawConfigPath();
   try {

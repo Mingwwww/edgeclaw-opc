@@ -47,14 +47,13 @@ export function getMissingEdgeClawEnvKeys() {
 
 export function assertRequiredEdgeClawEnv() {
   const missingKeys = getMissingEdgeClawEnvKeys();
-  if (missingKeys.length === 0) {
-    return;
+  if (missingKeys.length > 0) {
+    console.warn(
+      `[WARN] Missing EdgeClaw config: ${missingKeys.join(', ')}. ` +
+        `The setup wizard will be shown during onboarding.`,
+    );
   }
-
-  throw new Error(
-    `Missing required EdgeClaw configuration: ${missingKeys.join(', ')}. ` +
-      `Set them in ${getEdgeClawConfigPath()} before starting CloudCLI.`,
-  );
+  return missingKeys;
 }
 
 export function loadRootEdgeClawEnv() {
