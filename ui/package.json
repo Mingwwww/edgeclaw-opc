@@ -5,7 +5,7 @@
   "type": "module",
   "main": "server/index.js",
   "bin": {
-    "politdeck": "server/cli.js",
+    "pilotdeck": "server/cli.js",
     "cloudcli": "server/cli.js"
   },
   "files": [

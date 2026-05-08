@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Politdeck one-line installer for macOS
+# Pilotdeck one-line installer for macOS
 # Usage: curl -fsSL https://raw.githubusercontent.com/Mingwwww/edgeclaw-opc/feat/onboarding-llm-setup/install.sh | bash
 #
 # Installs to: ~/.edgeclaw/app/
 # Data dir:    ~/.edgeclaw/
 # Config:      ~/.edgeclaw/config.yaml
-# CLI symlink: /usr/local/bin/politdeck
+# CLI symlink: /usr/local/bin/pilotdeck
 
 REPO_URL="https://github.com/Mingwwww/edgeclaw-opc.git"
 INSTALL_DIR="$HOME/.edgeclaw/app"
-BIN_LINK="/usr/local/bin/politdeck"
+BIN_LINK="/usr/local/bin/pilotdeck"
 BRANCH="feat/onboarding-llm-setup"
 
 GREEN='\033[0;32m'
@@ -26,7 +26,7 @@ warn() { printf "  ${YELLOW}→${RESET} %s\n" "$1"; }
 fail() { printf "  ${RED}✗${RESET} %s\n" "$1"; exit 1; }
 
 echo ""
-echo -e "${BOLD}Politdeck Installer${RESET}"
+echo -e "${BOLD}Pilotdeck Installer${RESET}"
 echo "===================="
 echo ""
 
@@ -87,7 +87,7 @@ echo ""
 # -------------------------------------------------------------------
 # 4. Clone or update the repository
 # -------------------------------------------------------------------
-echo "Installing politdeck to ${DIM}${INSTALL_DIR}${RESET} ..."
+echo "Installing pilotdeck to ${DIM}${INSTALL_DIR}${RESET} ..."
 mkdir -p "$(dirname "$INSTALL_DIR")"
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -132,19 +132,19 @@ fi
 
 if [[ -w "$(dirname "$BIN_LINK")" ]]; then
   ln -sf "$CLI_TARGET" "$BIN_LINK"
-  ok "politdeck command linked to ${DIM}${BIN_LINK}${RESET}"
+  ok "pilotdeck command linked to ${DIM}${BIN_LINK}${RESET}"
 elif sudo -n true 2>/dev/null; then
   sudo ln -sf "$CLI_TARGET" "$BIN_LINK"
-  ok "politdeck command linked to ${DIM}${BIN_LINK}${RESET}"
+  ok "pilotdeck command linked to ${DIM}${BIN_LINK}${RESET}"
 else
   LOCAL_BIN="$HOME/.local/bin"
   mkdir -p "$LOCAL_BIN"
-  ln -sf "$CLI_TARGET" "$LOCAL_BIN/politdeck"
-  ok "politdeck command linked to ${DIM}${LOCAL_BIN}/politdeck${RESET}"
+  ln -sf "$CLI_TARGET" "$LOCAL_BIN/pilotdeck"
+  ok "pilotdeck command linked to ${DIM}${LOCAL_BIN}/pilotdeck${RESET}"
   if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
     warn "Add to your shell profile:  export PATH=\"\$HOME/.local/bin:\$PATH\""
   fi
-  BIN_LINK="$LOCAL_BIN/politdeck"
+  BIN_LINK="$LOCAL_BIN/pilotdeck"
 fi
 echo ""
 
@@ -155,12 +155,12 @@ echo -e "${BOLD}Installation complete!${RESET}"
 echo ""
 echo -e "  App location:   ${DIM}${INSTALL_DIR}${RESET}"
 echo -e "  Config file:    ${DIM}~/.edgeclaw/config.yaml${RESET}"
-echo -e "  CLI command:    ${DIM}politdeck${RESET}"
+echo -e "  CLI command:    ${DIM}pilotdeck${RESET}"
 echo ""
 
 # -------------------------------------------------------------------
 # 8. Start
 # -------------------------------------------------------------------
-echo "Starting politdeck..."
+echo "Starting pilotdeck..."
 echo ""
 exec node "$CLI_TARGET"

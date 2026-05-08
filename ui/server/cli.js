@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * politdeck CLI
+ * pilotdeck CLI
  *
  * One-command deploy: auto-installs deps, detects conflicts, validates config,
  * opens a browser-based setup wizard when needed, then boots the full server.
@@ -74,7 +74,7 @@ function getInstallDir() {
 function showStatus() {
     loadRootEdgeClawEnv();
 
-    console.log(`\n${c.bright('politdeck - Status')}\n`);
+    console.log(`\n${c.bright('pilotdeck - Status')}\n`);
     console.log(c.dim('═'.repeat(60)));
 
     console.log(`\n${c.info('[INFO]')} Version: ${c.bright(packageJson.version)}`);
@@ -112,9 +112,9 @@ function showStatus() {
 
     console.log('\n' + c.dim('═'.repeat(60)));
     console.log(`\n${c.tip('[TIP]')} Hints:`);
-    console.log(`      ${c.dim('>')} Use ${c.bright('politdeck --port 8080')} to run on a custom port`);
-    console.log(`      ${c.dim('>')} Use ${c.bright('politdeck --database-path /path/to/db')} for custom database`);
-    console.log(`      ${c.dim('>')} Run ${c.bright('politdeck help')} for all options`);
+    console.log(`      ${c.dim('>')} Use ${c.bright('pilotdeck --port 8080')} to run on a custom port`);
+    console.log(`      ${c.dim('>')} Use ${c.bright('pilotdeck --database-path /path/to/db')} for custom database`);
+    console.log(`      ${c.dim('>')} Run ${c.bright('pilotdeck help')} for all options`);
     console.log(`      ${c.dim('>')} Access the UI at http://localhost:${process.env.SERVER_PORT || process.env.PORT || '3001'}\n`);
 }
 
@@ -122,11 +122,11 @@ function showStatus() {
 function showHelp() {
     console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
-║              politdeck - Command Line Tool                   ║
+║              pilotdeck - Command Line Tool                   ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 Usage:
-  politdeck [command] [options]
+  pilotdeck [command] [options]
 
 Commands:
   start          Start the server (default)
@@ -142,11 +142,11 @@ Options:
   -v, --version               Show version information
 
 Examples:
-  $ politdeck                        # Start with defaults
-  $ politdeck --port 8080            # Start on port 8080
-  $ politdeck -p 3000                # Short form for port
-  $ politdeck start --port 4000      # Explicit start command
-  $ politdeck status                 # Show configuration
+  $ pilotdeck                        # Start with defaults
+  $ pilotdeck --port 8080            # Start on port 8080
+  $ pilotdeck -p 3000                # Short form for port
+  $ pilotdeck start --port 4000      # Explicit start command
+  $ pilotdeck status                 # Show configuration
 
 Configuration:
   Edit ~/.edgeclaw/config.yaml directly or from Settings -> Config in the UI.
@@ -180,12 +180,12 @@ function isNewerVersion(v1, v2) {
 async function checkForUpdates(silent = false) {
     try {
         const { execSync } = await import('child_process');
-        const latestVersion = execSync('npm show politdeck version 2>/dev/null || npm show @cloudcli-ai/cloudcli version', { encoding: 'utf8' }).trim();
+        const latestVersion = execSync('npm show pilotdeck version 2>/dev/null || npm show @cloudcli-ai/cloudcli version', { encoding: 'utf8' }).trim();
         const currentVersion = packageJson.version;
 
         if (isNewerVersion(latestVersion, currentVersion)) {
             console.log(`\n${c.warn('[UPDATE]')} New version available: ${c.bright(latestVersion)} (current: ${currentVersion})`);
-            console.log(`         Run ${c.bright('politdeck update')} to update\n`);
+            console.log(`         Run ${c.bright('pilotdeck update')} to update\n`);
             return { hasUpdate: true, latestVersion, currentVersion };
         } else if (!silent) {
             console.log(`${c.ok('[OK]')} You are on the latest version (${currentVersion})`);
@@ -213,17 +213,17 @@ async function updatePackage() {
         }
 
         console.log(`${c.info('[INFO]')} Updating from ${currentVersion} to ${latestVersion}...`);
-        execSync('npm update -g politdeck || npm update -g @cloudcli-ai/cloudcli', { stdio: 'inherit' });
-        console.log(`${c.ok('[OK]')} Update complete! Restart politdeck to use the new version.`);
+        execSync('npm update -g pilotdeck || npm update -g @cloudcli-ai/cloudcli', { stdio: 'inherit' });
+        console.log(`${c.ok('[OK]')} Update complete! Restart pilotdeck to use the new version.`);
     } catch (e) {
         console.error(`${c.error('[ERROR]')} Update failed: ${e.message}`);
-        console.log(`${c.tip('[TIP]')} Try running manually: npm update -g politdeck`);
+        console.log(`${c.tip('[TIP]')} Try running manually: npm update -g pilotdeck`);
     }
 }
 
 // Start the server with preflight checks
 async function startServer() {
-    console.log(`\n${c.bright('politdeck')} starting...\n`);
+    console.log(`\n${c.bright('pilotdeck')} starting...\n`);
 
     // Phase A+B: Preflight (dependencies + port conflicts)
     const { runPreflight } = await import('./preflight.js');
@@ -306,7 +306,7 @@ async function main() {
             break;
         default:
             console.error(`\n❌ Unknown command: ${command}`);
-            console.log('   Run "politdeck help" for usage information.\n');
+            console.log('   Run "pilotdeck help" for usage information.\n');
             process.exit(1);
     }
 }
