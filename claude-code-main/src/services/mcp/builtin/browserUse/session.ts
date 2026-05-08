@@ -1,9 +1,40 @@
 import type { Browser, BrowserContext, Page } from 'playwright-core'
 import { ensureGlobalChrome, restartGlobalChrome, isCDPHealthy } from './globalChrome.js'
 
-const CDP_CONNECT_TIMEOUT = 15_000
-const MAX_CDP_RETRIES = 2
+const CDP_CONNECT_TIMEOUT = 8_000
+const MAX_CDP_RETRIES = 1
 const CDP_RETRY_DELAY_MS = 250
+
+// Chrome 147+ broke Playwright's connectOverCDP due to a setDownloadBehavior
+// protocol change.  We detect the major version from the running Chrome's
+// /json/version endpoint and skip CDP entirely when it is >= 147.
+const CDP_INCOMPATIBLE_CHROME_MAJOR = 147
+let _cachedChromeMajor: number | null = null
+
+async function getChromeMajorVersion(): Promise<number> {
+  if (_cachedChromeMajor !== null) return _cachedChromeMajor
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 3_000)
+    const res = await fetch('http://127.0.0.1:9222/json/version', {
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
+    if (!res.ok) return 0
+    const data = (await res.json()) as { Browser?: string }
+    const match = data.Browser?.match(/Chrome\/(\d+)/)
+    const major = match ? parseInt(match[1], 10) : 0
+    if (major > 0) _cachedChromeMajor = major
+    return major
+  } catch {
+    return 0
+  }
+}
+
+async function isCDPIncompatible(): Promise<boolean> {
+  const major = await getChromeMajorVersion()
+  return major >= CDP_INCOMPATIBLE_CHROME_MAJOR
+}
 
 export interface BrowserSession {
   browser: Browser
@@ -34,15 +65,37 @@ function isConnectionAlive(cached: CachedConnection): boolean {
   }
 }
 
+// Single-flight guard: prevents concurrent callers from each spawning a Chrome.
+let _launchingManaged: Promise<BrowserSession> | null = null
+
+function shouldRunHeadless(): boolean {
+  if (process.env.BROWSER_HEADLESS === '1') return true
+  if (process.platform === 'linux' && !process.env.DISPLAY) return true
+  return false
+}
+
 /**
  * Fallback: let Playwright manage Chrome directly (no external CDP).
  * Works around Chrome 147+ breaking connectOverCDP's setDownloadBehavior.
+ * Uses single-flight to prevent concurrent launches.
  */
-async function launchManagedBrowser(): Promise<BrowserSession> {
+function launchManagedBrowser(): Promise<BrowserSession> {
+  // Reuse cached connection if still alive
+  const cached = cachedByCdpUrl.get(CACHE_KEY_LAUNCHED)
+  if (cached && isConnectionAlive(cached)) {
+    return Promise.resolve({ browser: cached.browser, context: cached.context })
+  }
+  if (_launchingManaged) return _launchingManaged
+  _launchingManaged = _doLaunchManagedBrowser()
+    .finally(() => { _launchingManaged = null })
+  return _launchingManaged
+}
+
+async function _doLaunchManagedBrowser(): Promise<BrowserSession> {
   const { chromium } = await import('playwright-core')
   const browser = await chromium.launch({
     channel: 'chrome',
-    headless: false,
+    headless: shouldRunHeadless(),
     timeout: CDP_CONNECT_TIMEOUT,
   })
   const context = browser.contexts()[0] ?? await browser.newContext()
@@ -117,9 +170,15 @@ export async function getOrCreateSession(): Promise<BrowserSession> {
 
   const rawCdpUrl = process.env.CDP_URL ?? await ensureGlobalChrome()
   if (!rawCdpUrl) {
-    // No external Chrome available — fall back to Playwright-managed launch
     return launchManagedBrowser()
   }
+
+  // Chrome 147+ breaks Playwright's connectOverCDP — skip directly to
+  // Playwright-managed launch to avoid a multi-retry 60s+ hang.
+  if (await isCDPIncompatible()) {
+    return launchManagedBrowser()
+  }
+
   const cdpUrl = normalizeCdpUrl(rawCdpUrl)
 
   const cached = cachedByCdpUrl.get(cdpUrl)
@@ -136,8 +195,7 @@ export async function getOrCreateSession(): Promise<BrowserSession> {
 
   const pending = connectWithRetry(cdpUrl)
     .catch(() => {
-      // connectOverCDP failed (e.g. Chrome 147 setDownloadBehavior issue)
-      // Fall back to Playwright-managed Chrome
+      // connectOverCDP failed — fall back to Playwright-managed Chrome
       return launchManagedBrowser()
     })
     .finally(() => {
@@ -173,7 +231,8 @@ export async function getPageByTargetId(targetId: string): Promise<Page | null> 
 
 /**
  * Close the Playwright CDP connection (not the Chrome process).
- * Mirrors OpenClaw's closePlaywrightBrowserConnection.
+ * For CDP-connected browsers, uses disconnect() to avoid killing the browser.
+ * For Playwright-managed browsers (launched via chromium.launch), uses close().
  */
 export async function closeSession(opts?: { cdpUrl?: string }): Promise<void> {
   const normalized = opts?.cdpUrl ? normalizeCdpUrl(opts.cdpUrl) : null
@@ -186,18 +245,40 @@ export async function closeSession(opts?: { cdpUrl?: string }): Promise<void> {
       if (cur.onDisconnected && typeof cur.browser.off === 'function') {
         cur.browser.off('disconnected', cur.onDisconnected)
       }
-      await cur.browser.close().catch(() => {})
+      // CDP connections: disconnect only, don't kill the browser process
+      if (normalized !== CACHE_KEY_LAUNCHED) {
+        await disconnectSafely(cur.browser)
+      } else {
+        await cur.browser.close().catch(() => {})
+      }
     }
     return
   }
 
-  const connections = Array.from(cachedByCdpUrl.values())
+  const connections = Array.from(cachedByCdpUrl.entries())
   cachedByCdpUrl.clear()
   connectingByCdpUrl.clear()
-  for (const cur of connections) {
+  for (const [key, cur] of connections) {
     if (cur.onDisconnected && typeof cur.browser.off === 'function') {
       cur.browser.off('disconnected', cur.onDisconnected)
     }
-    await cur.browser.close().catch(() => {})
+    // Only fully close Playwright-managed browsers; disconnect CDP connections
+    if (key === CACHE_KEY_LAUNCHED) {
+      await cur.browser.close().catch(() => {})
+    } else {
+      await disconnectSafely(cur.browser)
+    }
   }
+}
+
+async function disconnectSafely(browser: Browser): Promise<void> {
+  try {
+    // Playwright's Browser object from connectOverCDP supports disconnect
+    // which drops the WebSocket without sending Browser.close CDP command
+    if (typeof (browser as any).disconnect === 'function') {
+      await (browser as any).disconnect()
+    } else {
+      await browser.close()
+    }
+  } catch { /* ignore */ }
 }
