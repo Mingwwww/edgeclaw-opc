@@ -1,0 +1,27 @@
+---
+title: "Always On 概览"
+icon: "power-off"
+---
+
+Always On 是 EdgeClaw 的后台常驻和主动发现能力。它不是普通聊天入口，而是让系统在满足条件时主动检查项目或触发任务。
+
+## 适用场景
+
+- 定时扫描项目状态。
+- 根据最近用户消息或项目心跳决定是否触发。
+- 给长期运行的本地 Agent 加上预算、冷却和节流。
+
+## 配置入口
+
+相关配置位于：
+
+```yaml
+discovery:
+  trigger:
+    enabled: false
+    tickIntervalMinutes: 5
+    cooldownMinutes: 60
+    dailyBudget: 4
+```
+
+默认是关闭的，后续教程会补充如何安全开启。

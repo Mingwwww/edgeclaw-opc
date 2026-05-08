@@ -1,0 +1,19 @@
+---
+title: "组件关系"
+icon: "cubes"
+---
+
+本页先给出组件级骨架，后续会补每个组件的启动方式、端口、依赖关系和排障方法。
+
+| 组件 | 作用 |
+| --- | --- |
+| `ui/` | Pilotdeck Web 服务和前端界面 |
+| `claude-code-main/` | CLI 链路、本地代理、Gateway 相关能力 |
+| `edgeclaw-memory-core/` | 记忆检索与索引核心 |
+| Gateway | 将外部消息渠道接入 EdgeClaw |
+| Routing | 管理模型 provider、model entry 和请求路由 |
+| Always On | 后台常驻、主动发现和项目触发能力 |
+
+<Note>
+源码开发和手动启动流程后续会放到开发指南中，不放在普通用户的“开始使用”主线里。
+</Note>

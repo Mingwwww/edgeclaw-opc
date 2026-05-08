@@ -1,7 +1,0 @@
-.env
-.router.log
-node_modules/
-
-# CCR build artifacts
-src/router/server.cjs
-src/router/server.cjs.map

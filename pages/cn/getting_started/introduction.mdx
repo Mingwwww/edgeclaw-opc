@@ -1,0 +1,39 @@
+---
+title: "项目简介"
+icon: "book-open"
+---
+
+## EdgeClaw 是什么
+
+EdgeClaw 是一套把本地 AI 编程工作流、网页版控制台、消息网关、记忆能力、模型路由和 Always On 后台能力收敛到一起的运行环境。
+
+它的核心目标是让用户不用反复维护多个 `.env` 文件，也不用手动拼接不同服务。EdgeClaw 使用一份统一配置文件：
+
+```text
+~/.edgeclaw/config.yaml
+```
+
+Web、CLI、Memory、Routing、Gateway 和 Always On 都从这份配置派生运行参数。
+
+<Columns cols={2}>
+  <Card title="网页版一键安装">
+    面向普通用户。复制一条安装命令，脚本会安装依赖、拉取代码、构建前端并启动 `pilotdeck`。
+  </Card>
+  <Card title="桌面版安装">
+    面向希望使用 macOS App 的用户。下载 DMG 后拖入 Applications，并按需要处理 Gatekeeper 限制。
+  </Card>
+  <Card title="统一配置">
+    模型、Gateway、Memory 和后台能力都写入 `~/.edgeclaw/config.yaml`，避免多处配置不一致。
+  </Card>
+  <Card title="核心能力">
+    Gateway、Memory、Routing、Always On 会作为独立能力逐步完善教程。
+  </Card>
+</Columns>
+
+## 你应该从哪里开始
+
+如果你只是想快速用起来，优先阅读 [网页版一键安装](/pages/cn/getting_started/web_install)。
+
+如果你拿到的是 macOS 桌面安装包，阅读 [桌面版安装](/pages/cn/getting_started/desktop_install)。
+
+如果你要理解系统为什么这样组织，继续阅读 [架构总览](/pages/cn/architecture/overview)。

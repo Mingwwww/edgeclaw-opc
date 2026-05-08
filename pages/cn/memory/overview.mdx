@@ -1,0 +1,26 @@
+---
+title: "Memory 概览"
+icon: "brain"
+---
+
+Memory 是 EdgeClaw 的记忆检索与索引能力，用来让 Agent 能够在后续对话或任务中复用已有上下文。
+
+## 默认行为
+
+Memory 默认开启。只有显式关闭时才会停用：
+
+```yaml
+memory:
+  enabled: false
+```
+
+默认情况下，Memory 可以继承主 Agent 的模型配置：
+
+```yaml
+memory:
+  model: inherit
+```
+
+## 后续补充方向
+
+后续会补充：记忆写入策略、检索时机、索引存储、隐私边界和排障方法。

@@ -1,0 +1,52 @@
+---
+title: "Troubleshooting"
+icon: "wrench"
+---
+
+这里汇总安装、配置和运行时常见问题。
+
+## 安装脚本提示不是 macOS
+
+当前一键安装脚本只支持 macOS。Linux/Windows 支持后续再补。
+
+## 缺少 Git
+
+安装 Xcode Command Line Tools：
+
+```bash
+xcode-select --install
+```
+
+## `pilotdeck` 找不到
+
+尝试：
+
+```bash
+~/.local/bin/pilotdeck
+```
+
+如果能启动，把 `~/.local/bin` 加入 PATH。
+
+## 端口 3001 被占用
+
+```bash
+kill $(lsof -i :3001 -t) 2>/dev/null
+pilotdeck
+```
+
+## LLM 连接失败
+
+优先检查：
+
+- API Key 是否正确。
+- API Base URL 是否以 `/v1` 结尾。
+- 服务商余额是否充足。
+- 当前网络或 VPN 是否可访问服务商。
+
+## 配置文件在哪里
+
+```text
+~/.edgeclaw/config.yaml
+```
+
+可以在 UI 的 Settings 中修改，也可以直接编辑文件后重启服务。

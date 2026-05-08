@@ -1,0 +1,35 @@
+---
+title: "Memory 配置"
+icon: "sliders"
+---
+
+Memory 的配置同样来自 `~/.edgeclaw/config.yaml`。
+
+## 继承主模型
+
+最简单的方式是继承主模型：
+
+```yaml
+memory:
+  enabled: true
+  model: inherit
+```
+
+## 使用独立模型
+
+如果希望 Memory 使用更便宜或更快的模型，可以先在 `models.providers` 和 `models.entries` 中定义模型，再让 `memory.model` 指向对应 id。
+
+```yaml
+models:
+  entries:
+    memory-small:
+      provider: edgeclaw
+      name: your-memory-model
+memory:
+  enabled: true
+  model: memory-small
+```
+
+<Note>
+本页先记录配置方向，后续会补实际推荐模型、性能影响和调试方法。
+</Note>

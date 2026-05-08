@@ -1,0 +1,211 @@
+---
+title: "网页版安装"
+icon: "rocket"
+---
+
+本页面向第一次使用 EdgeClaw 网页版的用户。推荐先走一键安装路径，源码安装后续会放到开发指南中。
+
+## 准备工作
+
+开始前请确认你有：
+
+- 一台 Mac（目前一键安装脚本仅支持 macOS）。
+- 可用网络。
+- 一个可用的 LLM API Key。
+
+<Info>
+安装脚本会检查 Git 和 Node.js。如果没有合适的 Node.js，会尝试通过 `fnm` 自动安装 Node.js 22。
+</Info>
+
+## 一键安装
+
+打开终端，复制下面的命令并回车：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mingwwww/edgeclaw-opc/feat/onboarding-llm-setup/install.sh | bash
+```
+
+正常情况下你会看到类似输出：
+
+```text
+Pilotdeck Installer
+====================
+
+Checking system requirements...
+  ✓ macOS detected
+
+Checking Node.js...
+  ✓ Node.js v22.15.0 found
+
+Checking git...
+  ✓ git found
+
+Installing pilotdeck to ~/.edgeclaw/app/ ...
+  ✓ Repository cloned
+
+Installing dependencies & building frontend...
+  ✓ Dependencies installed
+  ✓ Frontend built
+  ✓ Dev dependencies cleaned
+
+Setting up CLI command...
+  ✓ pilotdeck command linked to /usr/local/bin/pilotdeck
+
+Installation complete!
+
+Starting pilotdeck...
+```
+
+<Note>
+如果终端要求输入密码，输入 Mac 开机密码并回车。输入时屏幕不会显示字符，这是终端的正常行为。通常这是为了创建 `/usr/local/bin/pilotdeck` 命令链接。
+</Note>
+
+
+脚本会安装到：
+
+```text
+~/.edgeclaw/app/
+```
+
+配置文件位置是：
+
+```text
+~/.edgeclaw/config.yaml
+```
+
+命令行入口是：
+
+```text
+pilotdeck
+```
+
+
+## 配置 LLM 服务商
+
+安装完成后，浏览器会打开配置页面。如果没有自动打开，手动访问：
+
+```text
+http://localhost:3001
+```
+
+你会看到 `LLM Provider Setup`。配置流程如下：
+
+<img
+  src="/images/getting_started/llm-provider-setup.png"
+  alt="LLM Provider Setup 配置页面"
+  style={{ width: "70%", maxWidth: "640px", display: "block", margin: "24px auto 32px", borderRadius: "18px", boxShadow: "0 20px 48px rgba(15, 23, 42, 0.16)" }}
+/>
+
+### 第一步：选择预设
+
+页面上方提供常见服务商预设：
+
+- Anthropic
+- OpenRouter
+- MiniMax
+- OpenAI
+
+点击对应服务商后，`API Base URL`、`Model ID` 和 `Protocol Type` 会自动填入。
+
+<Tip>
+如果你的服务商不在预设里，例如 DeepSeek，可以跳过预设，手动填写下面几个字段。
+</Tip>
+
+### 第二步：填写 API 信息
+
+| 字段 | 说明 | 示例 |
+| --- | --- | --- |
+| API Base URL | 服务商 API 地址 | `https://api.deepseek.com/v1` |
+| API Key | 你的服务商密钥 | `sk-xxxxxxxx` |
+| Model ID | 模型名称或标识符 | `deepseek-chat` |
+| Protocol Type | 协议类型 | OpenAI 兼容服务通常选择 `openai-chat` |
+
+### 第三步：测试连接
+
+点击 `Test Connection`。
+
+- 如果出现 `Connected successfully`，说明连接成功。
+- 如果出现红色错误，优先检查 API Key、网络、服务商余额和 API Base URL。
+
+### 第四步：保存
+
+测试通过后点击 `Save`。配置会写入：
+
+```text
+~/.edgeclaw/config.yaml
+```
+
+之后页面会进入主界面。
+
+## 验证安装成功
+
+进入主界面后，在底部输入框发送一条消息。如果 AI 正常回复，说明安装和配置已经完成。
+
+## 日常使用
+
+| 操作 | 方法 |
+| --- | --- |
+| 启动 | 在终端输入 `pilotdeck` |
+| 使用 | 浏览器访问 `http://localhost:3001` |
+| 关闭 | 在运行服务的终端按 `Ctrl + C` |
+| 更新 | 重新运行一键安装命令 |
+
+重新运行安装命令会更新 `~/.edgeclaw/app/` 中的代码，不会覆盖已有配置。
+
+## 常见问题
+
+### Test Connection 失败
+
+常见原因包括 API Key 错误、网络不可达、服务商余额不足、API Base URL 缺少 `/v1`。
+
+### 输入 pilotdeck 提示 command not found
+
+安装时可能将命令放到了 `~/.local/bin/`。可以先用完整路径启动：
+
+```bash
+~/.local/bin/pilotdeck
+```
+
+也可以把路径加入 shell 配置：
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### 端口 3001 被占用
+
+说明之前的服务还在运行。可以释放端口后再启动：
+
+```bash
+kill $(lsof -i :3001 -t) 2>/dev/null
+pilotdeck
+```
+
+### 浏览器没有自动打开
+
+手动访问：
+
+```text
+http://localhost:3001
+```
+
+## 卸载
+
+只删除程序和命令链接：
+
+```bash
+rm -rf ~/.edgeclaw/app
+rm -f /usr/local/bin/pilotdeck
+rm -f ~/.local/bin/pilotdeck
+```
+
+如果也要删除配置：
+
+```bash
+rm -f ~/.edgeclaw/config.yaml
+```
+
+<Warning>
+如果删除 `~/.edgeclaw/`，可能会清除配置、数据和历史记录。执行前请确认你确实不再需要这些数据。
+</Warning>

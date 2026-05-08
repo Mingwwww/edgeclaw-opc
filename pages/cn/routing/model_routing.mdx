@@ -1,0 +1,35 @@
+---
+title: "模型路由"
+icon: "code-branch"
+---
+
+本页用于承载后续多模型路由教程。当前先记录最小概念。
+
+## 单模型配置
+
+```yaml
+models:
+  providers:
+    edgeclaw:
+      type: openai-chat
+      baseUrl: https://api.example.com/v1
+      apiKey: sk-xxxx
+  entries:
+    default:
+      provider: edgeclaw
+      name: your-model-name
+agents:
+  main:
+    model: default
+```
+
+## 多模型方向
+
+后续可以扩展为：
+
+- 主 Agent 使用强模型。
+- Memory 使用轻量模型。
+- Gateway 或特定任务使用独立模型。
+- 根据任务类型、成本或上下文长度做路由。
+
+详细策略后续补充。

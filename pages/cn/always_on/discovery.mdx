@@ -1,0 +1,21 @@
+---
+title: "主动发现"
+icon: "radar"
+---
+
+主动发现用于描述 Always On 如何判断“什么时候应该工作”。
+
+## 核心概念
+
+| 字段 | 含义 |
+| --- | --- |
+| `enabled` | 是否开启主动触发 |
+| `tickIntervalMinutes` | 后台检查间隔 |
+| `cooldownMinutes` | 两次触发之间的冷却时间 |
+| `dailyBudget` | 每日触发预算 |
+| `heartbeatStaleSeconds` | 项目心跳过期判断 |
+| `recentUserMsgMinutes` | 最近用户消息窗口 |
+
+## 后续补充方向
+
+后续会补项目配置、触发规则、日志查看和如何避免误触发。

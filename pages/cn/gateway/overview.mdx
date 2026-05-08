@@ -1,0 +1,36 @@
+---
+title: "Gateway 概览"
+icon: "tower-broadcast"
+---
+
+Gateway 负责把外部消息渠道接入 EdgeClaw，让用户可以从聊天工具、Webhook 或 API Server 触发本地 Agent 工作流。
+
+## 适用场景
+
+- 从飞书、Telegram、Discord、Slack 等渠道向 Agent 发消息。
+- 通过 Webhook 或 API Server 对接自己的业务系统。
+- 控制哪些用户、哪些群或哪些 channel 可以访问 Agent。
+
+## 配置入口
+
+Gateway 读取同一份配置：
+
+```text
+~/.edgeclaw/config.yaml
+```
+
+常见字段包括：
+
+```yaml
+gateway:
+  enabled: false
+  allowAllUsers: false
+  allowedUsers: []
+  channels:
+    feishu:
+      enabled: false
+    telegram:
+      enabled: false
+```
+
+本页先搭骨架，后续会补每个渠道的完整配置示例。

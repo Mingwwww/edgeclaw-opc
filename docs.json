@@ -1,0 +1,131 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "EdgeClaw",
+  "colors": {
+    "primary": "#000000",
+    "dark": "#000000",
+    "light": "#FFFFFF"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navigation": {
+    "languages": [
+      {
+        "language": "cn",
+        "tabs": [
+          {
+            "tab": "Docs",
+            "groups": [
+              {
+                "group": "开始使用",
+                "pages": [
+                  "pages/cn/getting_started/introduction",
+                  "pages/cn/getting_started/web_install",
+                  "pages/cn/getting_started/desktop_install"
+                ]
+              },
+              {
+                "group": "架构说明",
+                "pages": [
+                  "pages/cn/architecture/overview",
+                  "pages/cn/architecture/config_flow",
+                  "pages/cn/architecture/components"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "Capabilities",
+            "groups": [
+              {
+                "group": "Gateway",
+                "pages": [
+                  "pages/cn/gateway/overview",
+                  "pages/cn/gateway/channels"
+                ]
+              },
+              {
+                "group": "Memory",
+                "pages": [
+                  "pages/cn/memory/overview",
+                  "pages/cn/memory/configuration"
+                ]
+              },
+              {
+                "group": "Routing",
+                "pages": [
+                  "pages/cn/routing/overview",
+                  "pages/cn/routing/model_routing"
+                ]
+              },
+              {
+                "group": "Always On",
+                "pages": [
+                  "pages/cn/always_on/overview",
+                  "pages/cn/always_on/discovery"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "Reference",
+            "groups": [
+              {
+                "group": "参考",
+                "pages": [
+                  "pages/cn/reference/cli",
+                  "pages/cn/reference/troubleshooting"
+                ]
+              },
+              {
+                "group": "开发指南",
+                "pages": [
+                  "pages/cn/develop_guide/overview"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "primary": {
+      "type": "button",
+      "label": "Star on GitHub",
+      "href": "https://github.com/Mingwwww/edgeclaw-opc"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity"
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Mingwwww/edgeclaw-opc"
+    }
+  },
+  "errors": {
+    "404": {
+      "redirect": true
+    }
+  },
+  "seo": {
+    "metatags": {
+      "charset": "UTF-8",
+      "viewport": "width=device-width, initial-scale=1.0",
+      "description": "EdgeClaw 是面向 Claude Code 工作流的本地 Web、Gateway、Memory、Routing 和 Always On 一体化运行环境，提供一键安装、统一配置和多渠道接入能力。",
+      "keywords": "EdgeClaw, Pilotdeck, Claude Code, Web UI, Gateway, Memory, Routing, Always On",
+      "copyright": "Copyright © 2026 EdgeClaw"
+    }
+  }
+}

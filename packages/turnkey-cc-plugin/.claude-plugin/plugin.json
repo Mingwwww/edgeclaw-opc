@@ -1,8 +1,0 @@
-{
-  "name": "turnkey",
-  "version": "0.1.0-cc",
-  "description": "Funnel-style scaffold for AI-paired junior devs: onboard → clarify → design → develop → test → review → ship, with three-blindness scans (convention/trust/context). Claude Code plugin port of the Cursor turnkey-prototype.",
-  "author": { "name": "edgeclaw-opc" },
-  "homepage": "https://github.com/Mingwwww/edgeclaw-opc",
-  "repository": "https://github.com/Mingwwww/edgeclaw-opc"
-}
