@@ -484,13 +484,22 @@ function extractContentText(msg: any): string | undefined {
   return unwrapJsonQuery(raw);
 }
 
+function isSystemReminder(msg: any): boolean {
+  const raw = typeof msg.content === 'string'
+    ? msg.content
+    : Array.isArray(msg.content)
+      ? msg.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join(' ')
+      : '';
+  return raw.includes('<system-reminder>');
+}
+
 function extractQuerySnippet(body: any, isSubagent?: boolean): string | undefined {
   try {
     const messages = body.messages;
     if (!Array.isArray(messages) || messages.length === 0) return undefined;
 
     if (isSubagent) {
-      const userMsgs = messages.filter((m: any) => m.role === 'user');
+      const userMsgs = messages.filter((m: any) => m.role === 'user' && !isSystemReminder(m));
       const last = userMsgs[userMsgs.length - 1];
       if (!last) return undefined;
       const text = extractContentText(last);
@@ -498,7 +507,7 @@ function extractQuerySnippet(body: any, isSubagent?: boolean): string | undefine
       return text.length > 120 ? text.slice(0, 120) + '…' : text;
     }
 
-    const lastUser = [...messages].reverse().find((m: any) => m.role === 'user');
+    const lastUser = [...messages].reverse().find((m: any) => m.role === 'user' && !isSystemReminder(m));
     if (!lastUser) return undefined;
     const text = extractContentText(lastUser);
     if (!text) return undefined;

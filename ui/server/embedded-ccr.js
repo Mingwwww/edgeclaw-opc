@@ -151,18 +151,20 @@ export async function startEmbeddedCCR(options = {}) {
     },
   };
 
-  // Set ANTHROPIC_BASE_URL so CC subprocesses (spawned by the UI server)
-  // also go through CCR. They'll use the sentinel URL which the fetch
-  // interceptor (installed in their preload.ts) will handle.
-  // For subprocesses that don't have the interceptor, this is harmless —
-  // the sentinel URL will fail, and CC falls back to direct API.
-  process.env.ANTHROPIC_BASE_URL = 'http://ccr.local';
+  // Do NOT override ANTHROPIC_BASE_URL to ccr.local here.
+  // edgeclawConfig.js already sets it to http://127.0.0.1:<proxyPort>,
+  // and all traffic must go through the proxy so that the routing
+  // dashboard can collect stats.  Overriding to ccr.local bypasses the
+  // proxy and causes dashboard counters to stay at zero.
 
   return { port: null, baseUrl: null, reused: false, zeroPorts: true };
 }
 
 export function getCCRBaseUrl() {
-  return ccrServices ? 'http://ccr.local' : null;
+  // Return the proxy URL that edgeclawConfig already configured,
+  // rather than the ccr.local sentinel that bypasses stats collection.
+  const proxyPort = process.env.PROXY_PORT || process.env.EDGECLAW_PROXY_PORT || '18080';
+  return ccrServices ? `http://127.0.0.1:${proxyPort}` : null;
 }
 
 export function getCCRPort() {
