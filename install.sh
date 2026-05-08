@@ -110,10 +110,14 @@ echo ""
 # -------------------------------------------------------------------
 # 5. Install npm dependencies
 # -------------------------------------------------------------------
-echo "Installing dependencies..."
+echo "Installing dependencies & building frontend..."
 cd "$INSTALL_DIR/ui"
-HUSKY=0 npm install --omit=dev --no-audit --no-fund --loglevel=error 2>&1 | tail -1 || true
+HUSKY=0 npm install --no-audit --no-fund --loglevel=error 2>&1 | tail -1 || true
 ok "Dependencies installed"
+npx vite build --logLevel error 2>&1 | tail -3 || true
+ok "Frontend built"
+npm prune --omit=dev --no-audit --no-fund --loglevel=error 2>&1 | tail -1 || true
+ok "Dev dependencies cleaned"
 echo ""
 
 # -------------------------------------------------------------------
