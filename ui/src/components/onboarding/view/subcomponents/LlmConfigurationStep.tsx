@@ -11,8 +11,8 @@ type PresetKey = 'anthropic' | 'openrouter' | 'minimax' | 'openai';
 const PRESETS: Record<PresetKey, { type: string; baseUrl: string; model: string }> = {
   anthropic: { type: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5-20250929' },
   openrouter: { type: 'openai-chat', baseUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.5' },
-  minimax: { type: 'openai-chat', baseUrl: 'https://api.minimaxi.com', model: 'MiniMax-M2.7-highspeed' },
-  openai: { type: 'openai-chat', baseUrl: 'https://api.openai.com', model: 'gpt-4o' },
+  minimax: { type: 'openai-chat', baseUrl: 'https://api.minimaxi.com/v1', model: 'MiniMax-M2.7-highspeed' },
+  openai: { type: 'openai-chat', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o' },
 };
 
 const PRESET_LABELS: Record<PresetKey, string> = {
