@@ -3,6 +3,16 @@ set -euo pipefail
 
 # Politdeck one-line installer for macOS
 # Usage: curl -fsSL https://raw.githubusercontent.com/siteboon/claudecodeui/main/install.sh | bash
+#
+# Installs to: ~/.edgeclaw/app/
+# Data dir:    ~/.edgeclaw/
+# Config:      ~/.edgeclaw/config.yaml
+# CLI symlink: /usr/local/bin/politdeck
+
+REPO_URL="https://github.com/siteboon/claudecodeui.git"
+INSTALL_DIR="$HOME/.edgeclaw/app"
+BIN_LINK="/usr/local/bin/politdeck"
+BRANCH="feat/onboarding-llm-setup"
 
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -16,12 +26,12 @@ warn() { printf "  ${YELLOW}→${RESET} %s\n" "$1"; }
 fail() { printf "  ${RED}✗${RESET} %s\n" "$1"; exit 1; }
 
 echo ""
-echo "${BOLD}Politdeck Installer${RESET}"
+echo -e "${BOLD}Politdeck Installer${RESET}"
 echo "===================="
 echo ""
 
 # -------------------------------------------------------------------
-# Check macOS
+# 1. Check macOS
 # -------------------------------------------------------------------
 echo "Checking system requirements..."
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -31,7 +41,7 @@ ok "macOS detected"
 echo ""
 
 # -------------------------------------------------------------------
-# Check / install Node.js
+# 2. Check / install Node.js (>= 18)
 # -------------------------------------------------------------------
 echo "Checking Node.js..."
 if command -v node &>/dev/null; then
@@ -65,23 +75,80 @@ fi
 echo ""
 
 # -------------------------------------------------------------------
-# Install or update politdeck
+# 3. Check git
 # -------------------------------------------------------------------
-echo "Installing politdeck..."
-if command -v politdeck &>/dev/null; then
-  CURRENT=$(politdeck version 2>/dev/null || echo "unknown")
-  warn "politdeck ${CURRENT} already installed. Updating..."
-  npm update -g politdeck 2>/dev/null || npm update -g @cloudcli-ai/cloudcli 2>/dev/null || true
-else
-  warn "npm install -g politdeck"
-  npm install -g politdeck 2>/dev/null || npm install -g @cloudcli-ai/cloudcli
+echo "Checking git..."
+if ! command -v git &>/dev/null; then
+  fail "git is not installed. Please install Xcode Command Line Tools: xcode-select --install"
 fi
-ok "politdeck $(politdeck version 2>/dev/null || echo '') installed"
+ok "git found"
 echo ""
 
 # -------------------------------------------------------------------
-# Start
+# 4. Clone or update the repository
+# -------------------------------------------------------------------
+echo "Installing politdeck to ${DIM}${INSTALL_DIR}${RESET} ..."
+mkdir -p "$(dirname "$INSTALL_DIR")"
+
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+  warn "Existing installation found. Updating..."
+  cd "$INSTALL_DIR"
+  git fetch origin "$BRANCH" --quiet
+  git checkout "$BRANCH" --quiet 2>/dev/null || git checkout -b "$BRANCH" "origin/$BRANCH" --quiet
+  git pull origin "$BRANCH" --quiet
+  ok "Updated to latest"
+else
+  if [[ -d "$INSTALL_DIR" ]]; then
+    warn "Cleaning incomplete installation at $INSTALL_DIR"
+    rm -rf "$INSTALL_DIR"
+  fi
+  git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR" --quiet
+  ok "Repository cloned"
+fi
+echo ""
+
+# -------------------------------------------------------------------
+# 5. Install npm dependencies
+# -------------------------------------------------------------------
+echo "Installing dependencies..."
+cd "$INSTALL_DIR/ui"
+npm install --omit=dev --no-audit --no-fund --loglevel=error 2>&1 | tail -1 || true
+ok "Dependencies installed"
+echo ""
+
+# -------------------------------------------------------------------
+# 6. Create CLI symlink
+# -------------------------------------------------------------------
+echo "Setting up CLI command..."
+CLI_TARGET="$INSTALL_DIR/ui/server/cli.js"
+
+if [[ -L "$BIN_LINK" ]]; then
+  rm "$BIN_LINK"
+fi
+
+if [[ -w "$(dirname "$BIN_LINK")" ]]; then
+  ln -sf "$CLI_TARGET" "$BIN_LINK"
+  ok "politdeck command linked to ${DIM}${BIN_LINK}${RESET}"
+else
+  warn "Need permission to create ${BIN_LINK}"
+  sudo ln -sf "$CLI_TARGET" "$BIN_LINK"
+  ok "politdeck command linked to ${DIM}${BIN_LINK}${RESET}"
+fi
+echo ""
+
+# -------------------------------------------------------------------
+# 7. Summary
+# -------------------------------------------------------------------
+echo -e "${BOLD}Installation complete!${RESET}"
+echo ""
+echo -e "  App location:   ${DIM}${INSTALL_DIR}${RESET}"
+echo -e "  Config file:    ${DIM}~/.edgeclaw/config.yaml${RESET}"
+echo -e "  CLI command:    ${DIM}politdeck${RESET}"
+echo ""
+
+# -------------------------------------------------------------------
+# 8. Start
 # -------------------------------------------------------------------
 echo "Starting politdeck..."
 echo ""
-exec politdeck
+exec node "$CLI_TARGET"
