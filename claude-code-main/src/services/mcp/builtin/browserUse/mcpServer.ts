@@ -88,6 +88,9 @@ async function handleNavigate(args: Record<string, unknown>) {
   const timeout = (args.timeoutMs as number) ?? 60000
   const warnings: string[] = []
 
+  // All fallback attempts + retries share a single deadline to prevent cascade.
+  const totalDeadline = Date.now() + timeout
+
   // Graduated fallback: requested → domcontentloaded → commit
   const fallbackChain: Array<'networkidle' | 'load' | 'domcontentloaded' | 'commit'> = [
     requestedWait as 'networkidle' | 'load' | 'domcontentloaded' | 'commit',
@@ -100,12 +103,21 @@ async function handleNavigate(args: Record<string, unknown>) {
   }
 
   for (let retry = 0; retry < 2; retry++) {
+    const remaining = totalDeadline - Date.now()
+    if (remaining <= 0) break
+
     const page = await getActivePage()
 
     for (let i = 0; i < fallbackChain.length; i++) {
+      const stepRemaining = totalDeadline - Date.now()
+      if (stepRemaining <= 0) break
+
       const waitUntil = fallbackChain[i]!
       try {
-        await page.goto(url, { waitUntil, timeout })
+        await page.goto(url, {
+          waitUntil,
+          timeout: Math.min(stepRemaining, timeout),
+        })
 
         if (i > 0) {
           warnings.push(`${fallbackChain[0]} timed out, fell back to ${waitUntil}`)
@@ -123,7 +135,7 @@ async function handleNavigate(args: Record<string, unknown>) {
         }
         const isTimeout = err instanceof Error && /timeout/i.test(err.message)
         if (isTimeout && i < fallbackChain.length - 1) {
-          warnings.push(`${waitUntil} timed out (${timeout}ms)`)
+          warnings.push(`${waitUntil} timed out`)
           continue
         }
         throw err
@@ -131,7 +143,7 @@ async function handleNavigate(args: Record<string, unknown>) {
     }
   }
 
-  throw new Error(`navigate to ${url} failed after retries. ${warnings.join('; ')}`)
+  throw new Error(`navigate to ${url} failed after retries (budget ${timeout}ms). ${warnings.join('; ')}`)
 }
 
 async function handleScreenshot(args: Record<string, unknown>) {
@@ -297,11 +309,13 @@ async function handleTabs(args: Record<string, unknown>) {
     case 'list': {
       const pages = context.pages()
       const tabs = await Promise.all(
-        pages.map(async (p, i) => ({
-          index: i,
-          url: p.url(),
-          title: await p.title(),
-        })),
+        pages.map(async (p, i) => {
+          try {
+            return { index: i, url: p.url(), title: await p.title() }
+          } catch {
+            return { index: i, url: p.url(), title: '(closed)' }
+          }
+        }),
       )
       return [{ type: 'text' as const, text: JSON.stringify({ tabs }) }]
     }

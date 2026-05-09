@@ -55,6 +55,7 @@ interface UseChatRealtimeHandlersArgs {
   setCurrentSessionId: (sessionId: string | null) => void;
   setIsLoading: (loading: boolean) => void;
   setCanAbortSession: (canAbort: boolean) => void;
+  setIsAborting: (aborting: boolean) => void;
   setClaudeStatus: (status: { text: string; tokens: number; can_interrupt: boolean } | null) => void;
   setTokenBudget: (budget: Record<string, unknown> | null) => void;
   setPendingPermissionRequests: Dispatch<SetStateAction<PendingPermissionRequest[]>>;
@@ -83,6 +84,7 @@ export function useChatRealtimeHandlers({
   setCurrentSessionId,
   setIsLoading,
   setCanAbortSession,
+  setIsAborting,
   setClaudeStatus,
   setTokenBudget,
   setPendingPermissionRequests,
@@ -295,6 +297,7 @@ export function useChatRealtimeHandlers({
 
         setIsLoading(false);
         setCanAbortSession(false);
+        setIsAborting(false);
         setClaudeStatus(null);
         setPendingPermissionRequests((prev) =>
           prev.filter((r) => r.sessionId && r.sessionId !== sid),
@@ -331,6 +334,7 @@ export function useChatRealtimeHandlers({
       case 'error': {
         setIsLoading(false);
         setCanAbortSession(false);
+        setIsAborting(false);
         setClaudeStatus(null);
         onSessionInactive?.(sid);
         onSessionNotProcessing?.(sid);
@@ -401,6 +405,7 @@ export function useChatRealtimeHandlers({
     setCurrentSessionId,
     setIsLoading,
     setCanAbortSession,
+    setIsAborting,
     setClaudeStatus,
     setTokenBudget,
     setPendingPermissionRequests,

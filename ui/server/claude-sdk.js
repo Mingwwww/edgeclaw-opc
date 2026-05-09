@@ -221,41 +221,15 @@ function buildServerPermissionKey(toolName, input) {
  * @param {Object} options - CLI options
  * @returns {Object} SDK-compatible options
  */
-// General Chat synthetic cwd patterns — these are internal bookkeeping
-// directories, not real project workspaces.  When the agent runs in one
-// of these, it has no meaningful project context and tends to fall back
-// to writing files in /tmp.  Replace with a proper workspace so that
-// file operations land somewhere the user expects.
-const GENERAL_CWD_PATTERNS = [
-  path.join(os.homedir(), 'Claude', 'general'),
-  path.join(os.homedir(), '.claude-gateway', 'general'),
-].map((p) => path.resolve(p));
-
-function resolveGeneralChatWorkspace() {
-  return path.resolve(
-    process.env.GENERAL_WORKSPACE
-      || path.join(os.homedir(), 'Claude', 'workspace')
-  );
-}
-
-function isGeneralChatCwd(dir) {
-  return dir && GENERAL_CWD_PATTERNS.includes(path.resolve(dir));
-}
-
 async function mapCliOptionsToSDK(options = {}) {
   const { sessionId, cwd, toolsSettings, permissionMode } = options;
 
   const sdkOptions = {};
 
   // Map working directory — ensure it exists to avoid misleading ENOENT on spawn
-  // If the cwd is a General Chat synthetic path, swap it for a real workspace.
-  let effectiveCwd = cwd;
-  if (isGeneralChatCwd(effectiveCwd)) {
-    effectiveCwd = resolveGeneralChatWorkspace();
-  }
-  if (effectiveCwd) {
-    await fs.mkdir(effectiveCwd, { recursive: true });
-    sdkOptions.cwd = effectiveCwd;
+  if (cwd) {
+    await fs.mkdir(cwd, { recursive: true });
+    sdkOptions.cwd = cwd;
   }
 
   // Map permission mode
@@ -304,7 +278,8 @@ async function mapCliOptionsToSDK(options = {}) {
   // Map system prompt configuration
   sdkOptions.systemPrompt = {
     type: 'preset',
-    preset: 'claude_code'  // Required to use CLAUDE.md
+    preset: 'claude_code',
+    append: 'When creating or writing files, always default to the current working directory (or subdirectories within it) unless the user explicitly specifies an absolute path. Do NOT use /tmp or other system temporary directories for file output — those are only for internal scratchpad use.',
   };
 
   // Map setting sources for CLAUDE.md loading

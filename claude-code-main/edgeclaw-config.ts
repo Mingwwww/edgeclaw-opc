@@ -229,8 +229,10 @@ export function buildRuntimeEnvFromConfig(config: EdgeClawConfig): Record<string
     VITE_CONTEXT_WINDOW: String(config.runtime?.contextWindow ?? 160000),
     API_TIMEOUT_MS: String(config.runtime?.apiTimeoutMs ?? 120000),
     EDGECLAW_MEMORY_ENABLED: config.memory?.enabled === false ? '0' : '1',
-    CCR_ENABLED: process.env.CCR_ENABLED || (config.router?.enabled ? '1' : '0'),
-    CCR_DISABLED: process.env.CCR_DISABLED || (config.router?.enabled ? '0' : '1'),
+    CCR_ENABLED: process.env.CCR_DISABLED === '1' ? '0'
+      : process.env.CCR_ENABLED || (config.router?.enabled ? '1' : '0'),
+    CCR_DISABLED: process.env.CCR_DISABLED === '1' ? '1'
+      : (config.router?.enabled ? '0' : '1'),
     GATEWAY_ENABLED: config.gateway?.enabled ? '1' : '0',
     GATEWAY_HOME: expandTilde(config.gateway?.home),
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxyPort}`,

@@ -107,6 +107,8 @@ function ChatInterfaceV2({
     totalMessages,
     canAbortSession,
     setCanAbortSession,
+    isAborting,
+    setIsAborting,
     setIsUserScrolledUp,
     tokenBudget,
     setTokenBudget,
@@ -207,6 +209,7 @@ function ChatInterfaceV2({
     rewindMessages,
     setIsLoading,
     setCanAbortSession,
+    setIsAborting,
     setClaudeStatus,
     setIsUserScrolledUp,
     setPendingPermissionRequests,
@@ -259,6 +262,7 @@ function ChatInterfaceV2({
     setCurrentSessionId,
     setIsLoading,
     setCanAbortSession,
+    setIsAborting,
     setClaudeStatus,
     setTokenBudget,
     setPendingPermissionRequests,
@@ -369,6 +373,7 @@ function ChatInterfaceV2({
       isDragActive={isDragActive}
       isLoading={isLoading}
       canAbortSession={canAbortSession}
+      isAborting={isAborting}
       pendingPermissionRequests={pendingPermissionRequests}
       handlePermissionDecision={handlePermissionDecision}
       handleGrantToolPermission={handleGrantToolPermission}

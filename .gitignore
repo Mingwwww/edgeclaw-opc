@@ -37,6 +37,16 @@ skills-lock.json
 # gstack scratch dir (browse audit logs, demo recordings, qa reports — local only)
 .gstack/
 
+# Legacy UI fork (has its own repo)
+claudecodeui/
+
+# E2E test artifacts
+e2e-test-image.png
+ui/e2e-screenshots*/
+ui/e2e/
+ui/playwright.config.ts
+docs/tutorial/
+
 # codesign rewrites these in-place during release.sh signing step
 # (we do not vendor codesigned binaries; the unsigned originals come from npm install)
 claude-code-main/src/utils/vendor/ripgrep/*-darwin/rg

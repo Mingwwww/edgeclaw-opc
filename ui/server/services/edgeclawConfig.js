@@ -211,7 +211,6 @@ export function buildDefaultEdgeClawConfig() {
       httpsProxy: '',
       databasePath: path.join(os.homedir(), '.cloudcli', 'auth.db'),
       workspacesRoot: os.homedir(),
-      generalWorkspace: path.join(os.homedir(), 'Claude', 'workspace'),
     },
     models: {
       providers: {
@@ -534,15 +533,16 @@ export function buildRuntimeEnv(config) {
     VITE_CONTEXT_WINDOW: String(runtime.contextWindow ?? 160000),
     API_TIMEOUT_MS: String(runtime.apiTimeoutMs ?? 120000),
     EDGECLAW_MEMORY_ENABLED: normalized.memory.enabled ? '1' : '0',
-    CCR_ENABLED: process.env.CCR_ENABLED || (normalized.router.enabled ? '1' : '0'),
-    CCR_DISABLED: process.env.CCR_DISABLED || (normalized.router.enabled ? '0' : '1'),
+    CCR_ENABLED: process.env.CCR_DISABLED === '1' ? '0'
+      : process.env.CCR_ENABLED || (normalized.router.enabled ? '1' : '0'),
+    CCR_DISABLED: process.env.CCR_DISABLED === '1' ? '1'
+      : (normalized.router.enabled ? '0' : '1'),
     GATEWAY_ENABLED: normalized.gateway.enabled ? '1' : '0',
     GATEWAY_HOME: expandTilde(normalized.gateway.home),
   };
 
   if (runtime.databasePath) env.DATABASE_PATH = expandTilde(runtime.databasePath);
   if (runtime.workspacesRoot) env.WORKSPACES_ROOT = expandTilde(runtime.workspacesRoot);
-  if (runtime.generalWorkspace) env.GENERAL_WORKSPACE = expandTilde(runtime.generalWorkspace);
 
   const httpsProxy = runtime.httpsProxy || normalized.router?.httpsProxy || '';
   if (httpsProxy) {

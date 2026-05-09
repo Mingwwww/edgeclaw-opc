@@ -70,6 +70,7 @@ interface UseChatComposerStateArgs {
   rewindMessages: (count: number) => void;
   setIsLoading: (loading: boolean) => void;
   setCanAbortSession: (canAbort: boolean) => void;
+  setIsAborting: (aborting: boolean) => void;
   setClaudeStatus: (status: { text: string; tokens: number; can_interrupt: boolean } | null) => void;
   setIsUserScrolledUp: (isScrolledUp: boolean) => void;
   setPendingPermissionRequests: Dispatch<SetStateAction<PendingPermissionRequest[]>>;
@@ -131,6 +132,7 @@ export function useChatComposerState({
   rewindMessages,
   setIsLoading,
   setCanAbortSession,
+  setIsAborting,
   setClaudeStatus,
   setIsUserScrolledUp,
   setPendingPermissionRequests,
@@ -1046,7 +1048,10 @@ export function useChatComposerState({
       sessionId: targetSessionId,
       provider,
     });
-  }, [canAbortSession, currentSessionId, pendingViewSessionRef, provider, selectedSession?.id, sendMessage]);
+
+    setCanAbortSession(false);
+    setIsAborting(true);
+  }, [canAbortSession, currentSessionId, pendingViewSessionRef, provider, selectedSession?.id, sendMessage, setCanAbortSession, setIsAborting]);
 
   const handleGrantToolPermission = useCallback(
     (suggestion: { entry: string; toolName: string }) => {

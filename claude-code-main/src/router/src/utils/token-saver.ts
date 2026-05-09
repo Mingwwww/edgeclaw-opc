@@ -83,11 +83,19 @@ export function extractLastUserMessage(messages: any[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     if (msg.role !== "user") continue;
-    if (typeof msg.content === "string") return msg.content;
+    // Skip SDK-injected <system-reminder> messages so the classifier
+    // judges the real user query, not internal orchestration prompts.
+    if (typeof msg.content === "string") {
+      if (msg.content.includes("<system-reminder>")) continue;
+      return msg.content;
+    }
     if (Array.isArray(msg.content)) {
       const texts: string[] = [];
       for (const block of msg.content) {
-        if (block.type === "text" && block.text) texts.push(block.text);
+        if (block.type === "text" && block.text) {
+          if (block.text.includes("<system-reminder>")) continue;
+          texts.push(block.text);
+        }
         if (block.type === "tool_result") {
           if (typeof block.content === "string") texts.push(block.content);
         }
