@@ -13,6 +13,7 @@ import { readdirSync, statSync, existsSync } from 'fs'
 import { execSync } from 'child_process'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'node:url'
+import { get_encoding } from 'tiktoken'
 import {
   applyEdgeClawConfigToEnv,
   buildCcrConfigFromEdgeClawConfig,
@@ -50,6 +51,9 @@ const UPSTREAM_KEY = EDGECLAW_MODEL.provider.apiKey
 const UPSTREAM_TYPE = EDGECLAW_MODEL.provider.type || 'openai-chat'
 const UPSTREAM_HEADERS = EDGECLAW_MODEL.provider.headers || {}
 const PORT = parseInt(process.env.PROXY_PORT || '18080', 10)
+
+// Tiktoken encoder for fallback token counting when providers don't report usage
+const tiktokenEncoder = get_encoding('o200k_base')
 
 // OpenRouter app attribution. Only injected when the upstream is openrouter.ai
 // so we don't leak the header through unrelated upstreams.
@@ -606,6 +610,7 @@ function generateId(): string {
 function convertNonStreamingResponse(
   oaiResp: Record<string, unknown>,
   model: string,
+  requestBody?: Record<string, unknown>,
 ): Record<string, unknown> {
   const choices = oaiResp.choices as Array<Record<string, unknown>>
   const choice = choices?.[0] || {}
@@ -645,6 +650,15 @@ function convertNonStreamingResponse(
     stopReason = 'max_tokens'
   else if (finishReason === 'stop') stopReason = 'end_turn'
 
+  let inputTokens = usage?.prompt_tokens || 0
+  let outputTokens = usage?.completion_tokens || 0
+  if (inputTokens === 0 && outputTokens === 0 && requestBody) {
+    inputTokens = tiktokenEncoder.encode(JSON.stringify(requestBody)).length
+    const outputText = (message?.content as string) || ''
+    outputTokens = outputText ? tiktokenEncoder.encode(outputText).length : 1
+    console.log(`[proxy] tiktoken fallback (non-stream): in=${inputTokens} out=${outputTokens} model=${model}`)
+  }
+
   return {
     id: (oaiResp.id as string) || generateId(),
     type: 'message',
@@ -654,8 +668,8 @@ function convertNonStreamingResponse(
     stop_reason: stopReason,
     stop_sequence: null,
     usage: {
-      input_tokens: usage?.prompt_tokens || 0,
-      output_tokens: usage?.completion_tokens || 0,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
       cache_creation_input_tokens: 0,
       cache_read_input_tokens: 0,
       speed: undefined,
@@ -679,10 +693,16 @@ class StreamConverter {
   private outputTokens = 0
   private pendingFinish: string | null = null // deferred stop_reason until usage arrives
   private finished = false
+  private requestBodyJson: string
+  private collectedOutput = ''
 
-  constructor(model: string) {
+  constructor(model: string, requestBody: Record<string, unknown>) {
     this.id = generateId()
     this.model = model
+    this.requestBodyJson = JSON.stringify(requestBody)
+    // Pre-compute input tokens from request body so message_start has a
+    // valid value even if the provider never reports usage
+    this.inputTokens = tiktokenEncoder.encode(this.requestBodyJson).length
   }
 
   /** Emit the message_start event */
@@ -761,7 +781,7 @@ class StreamConverter {
     const deltaEvent = {
       type: 'message_delta',
       delta: { stop_reason: this.pendingFinish, stop_sequence: null },
-      usage: { output_tokens: this.outputTokens },
+      usage: { input_tokens: this.inputTokens, output_tokens: this.outputTokens },
     }
     let out = `event: message_delta\ndata: ${JSON.stringify(deltaEvent)}\n\n`
     out += `event: message_stop\ndata: {"type":"message_stop"}\n\n`
@@ -773,6 +793,7 @@ class StreamConverter {
     let output = ''
 
     // Handle usage info (may come in a usage-only final chunk)
+    // Provider-reported values override tiktoken pre-computation
     if (chunk.usage) {
       const usage = chunk.usage as Record<string, number>
       if (usage.prompt_tokens) this.inputTokens = usage.prompt_tokens
@@ -799,6 +820,7 @@ class StreamConverter {
     if (delta) {
       // Text content — skip empty strings to avoid confusing the SDK
       if (delta.content !== undefined && delta.content !== null && delta.content !== '') {
+        this.collectedOutput += delta.content as string
         if (!this.hasTextBlock) {
           output += this.startTextBlock()
         }
@@ -824,11 +846,14 @@ class StreamConverter {
             })
             this.currentToolId = tc.id as string
             this.currentToolName = fn.name
+            this.collectedOutput += fn.name
             output += this.startToolBlock(tc.id as string, fn.name)
             if (fn.arguments) {
+              this.collectedOutput += fn.arguments
               output += this.toolInputDelta(fn.arguments)
             }
           } else if (fn?.arguments) {
+            this.collectedOutput += fn.arguments
             output += this.toolInputDelta(fn.arguments)
           }
         }
@@ -850,12 +875,13 @@ class StreamConverter {
       if (finishReason === 'tool_calls') stopReason = 'tool_use'
       else if (finishReason === 'length') stopReason = 'max_tokens'
 
-      // If usage already arrived in this chunk, emit immediately
-      if (this.outputTokens > 0 || this.inputTokens > 0) {
+      // If provider reported output usage in this chunk, emit immediately.
+      // Otherwise defer — provider may send a usage-only chunk next, or
+      // flush() will compute output via tiktoken.
+      if (this.outputTokens > 0) {
         this.pendingFinish = stopReason
         output += this.emitFinish()
       } else {
-        // Defer — usage will come in the next chunk
         this.pendingFinish = stopReason
       }
     }
@@ -865,7 +891,12 @@ class StreamConverter {
 
   /** Call after the stream ends to flush any remaining events */
   flush(): string {
-    console.log(`[proxy] tokens: in=${this.inputTokens} out=${this.outputTokens} model=${this.model}`)
+    if (this.outputTokens === 0 && this.collectedOutput) {
+      this.outputTokens = tiktokenEncoder.encode(this.collectedOutput).length
+      console.log(`[proxy] tiktoken fallback (output): in=${this.inputTokens} out=${this.outputTokens} model=${this.model}`)
+    } else {
+      console.log(`[proxy] tokens: in=${this.inputTokens} out=${this.outputTokens} model=${this.model}`)
+    }
     if (this.pendingFinish && !this.finished) {
       return this.emitFinish()
     }
@@ -1061,6 +1092,7 @@ const server = Bun.serve({
         const anthropicResp = convertNonStreamingResponse(
           oaiResp as Record<string, unknown>,
           body.model,
+          openaiBody,
         )
         const u = (anthropicResp as Record<string, unknown>).usage as Record<string, number> | undefined
         console.log(`[proxy] tokens: in=${u?.input_tokens || 0} out=${u?.output_tokens || 0} model=${body.model}`)
@@ -1070,7 +1102,7 @@ const server = Bun.serve({
       }
 
       // Streaming response
-      const converter = new StreamConverter(body.model)
+      const converter = new StreamConverter(body.model, openaiBody)
       const upstreamBody = upstreamResp.body
       if (!upstreamBody) {
         return new Response('no body', { status: 502 })
