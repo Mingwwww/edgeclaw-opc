@@ -8,7 +8,10 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 # Node.js + build tools for native modules + common dev tools
 apt-get install -y --no-install-recommends \
   nodejs build-essential python3 python3-setuptools \
-  jq ripgrep sqlite3 zip unzip tree vim-tiny
+  git jq ripgrep sqlite3 zip unzip tree vim-tiny
 
 # Clean up apt cache to reduce image size
 rm -rf /var/lib/apt/lists/*
+
+# Global npm CLIs needed at runtime
+npm install -g clawhub

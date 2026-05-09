@@ -67,6 +67,20 @@ if [[ "$(uname)" == "Darwin" ]]; then
   fi
 fi
 
+# ── Ensure clawhub CLI is installed (needed for skill search/install in Web UI) ──
+if ! command -v clawhub &>/dev/null; then
+  log "Installing clawhub CLI (skill marketplace)..."
+  npm install -g clawhub 2>/dev/null || log "Warning: clawhub install failed (skill search will be unavailable)"
+fi
+
+# ── Warn about missing recommended tools ──
+if ! command -v git &>/dev/null; then
+  log "WARNING: git not found — project management and plugin features will not work"
+fi
+if ! command -v rg &>/dev/null; then
+  log "WARNING: ripgrep (rg) not found — code search will fall back to bundled binary or be unavailable"
+fi
+
 require_env() {
   local key="$1"
   if [ -z "${!key:-}" ]; then

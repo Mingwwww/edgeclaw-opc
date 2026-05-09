@@ -14,10 +14,27 @@
 
 ## 前置条件
 
+**必需：**
 - Bun
 - Node.js 22+
 - npm
+- Git
 - 一条可用的 OpenAI 兼容 API
+
+**自动安装（首次 `start.sh` 时）：**
+- clawhub CLI — skill 搜索与安装
+- peekaboo — macOS 浏览器自动化（仅 macOS）
+
+**可选（按需安装以启用对应功能）：**
+
+| 工具 | 安装方式 | 功能 |
+|------|---------|------|
+| ripgrep | `brew install ripgrep` | 代码搜索加速 |
+| tmux | `brew install tmux` | worktree / swarm 多 agent 并行 |
+| gh | `brew install gh` | GitHub App 安装 |
+| poppler | `brew install poppler` | PDF 文件读取 |
+| sox | `brew install sox` | 语音对话 |
+| task-master-ai | `npm install -g task-master-ai` | TaskMaster 项目管理 |
 
 ## 第一步：创建统一 YAML 配置
 
