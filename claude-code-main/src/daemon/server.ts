@@ -207,6 +207,7 @@ export class CronDaemonServer {
               dir: projectRoot,
               originSessionId: request.originSessionId,
                 manualOnly: request.manualOnly,
+              allowedTools: request.allowedTools,
               addSessionTask: task => {
                 createdSessionTask = this.sessionTaskStore.addTask(projectRoot, {
                   ...task,

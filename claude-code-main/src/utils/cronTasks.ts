@@ -75,6 +75,13 @@ export type CronTask = {
    */
   manualOnly?: boolean
   /**
+   * Tool permission rules inherited from the creating session. Daemon cron
+   * workers run in isolated processes and cannot access the parent session's
+   * store — this snapshot lets them apply the same allow rules the user had
+   * when the task was created (session + cliArg sources).
+   */
+  allowedTools?: string[]
+  /**
    * Stable sidechain transcript key for recurring Cron runs. One-shot tasks
    * intentionally do not persist this because each fire gets a fresh transcript.
    */
@@ -107,6 +114,7 @@ export type AddCronTaskOptions = {
   originSessionId?: string
   addSessionTask?: (task: CronTask) => void
   manualOnly?: boolean
+  allowedTools?: string[]
 }
 
 /**
@@ -255,6 +263,9 @@ export async function addCronTask(
     originSessionId: options?.originSessionId ?? getSessionId(),
     ...(recurring ? { recurring: true } : {}),
     ...(options?.manualOnly ? { manualOnly: true } : {}),
+    ...(options?.allowedTools && options.allowedTools.length > 0
+      ? { allowedTools: options.allowedTools }
+      : {}),
   }
   if (!durable) {
     const sessionTask: CronTask = {

@@ -39,6 +39,7 @@ export type CronDaemonRequest =
       durable: boolean
       manualOnly?: boolean
       agentId?: string
+      allowedTools?: string[]
     }
   | {
       type: 'list_tasks'

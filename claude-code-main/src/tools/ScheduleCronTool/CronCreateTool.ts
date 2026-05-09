@@ -133,10 +133,15 @@ export const CronCreateTool = buildTool({
     recurring = true,
     durable = false,
     manualOnly = false,
-  }) {
+  }, context) {
     // Kill switch forces session-only; schema stays stable so the model sees
     // no validation errors when the gate flips mid-session.
     const effectiveDurable = durable && isDurableCronEnabled()
+    const { alwaysAllowRules } = context.getAppState().toolPermissionContext
+    const allowedTools = [
+      ...(alwaysAllowRules.session ?? []),
+      ...(alwaysAllowRules.cliArg ?? []),
+    ]
     const response = await requestCronDaemon({
       type: 'create_task',
       projectRoot: getProjectRoot(),
@@ -147,6 +152,7 @@ export const CronCreateTool = buildTool({
       durable: effectiveDurable,
       manualOnly,
       agentId: getTeammateContext()?.agentId,
+      ...(allowedTools.length > 0 ? { allowedTools } : {}),
     })
     assertCronDaemonOk(response)
     if (response.data.type !== 'create_task') {

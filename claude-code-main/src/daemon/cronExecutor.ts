@@ -58,10 +58,13 @@ function configureWorkerBootstrap(
   switchSession(asSessionId(originSessionId ?? randomUUID()))
 }
 
-async function createWorkerStore(projectRoot: string) {
+async function createWorkerStore(
+  projectRoot: string,
+  inheritedAllowedTools?: string[],
+) {
   applyConfigEnvironmentVariables()
   const initResult = await initializeToolPermissionContext({
-    allowedToolsCli: [],
+    allowedToolsCli: inheritedAllowedTools ?? [],
     disallowedToolsCli: [],
     baseToolsCli: [],
     permissionMode: 'default',
@@ -108,6 +111,7 @@ export async function runCronWorker(payload: CronWorkerPayload): Promise<void> {
   const readFileState = createFileStateCacheWithSizeLimit(100)
   const { store, tools, commands, agents } = await createWorkerStore(
     payload.projectRoot,
+    payload.task.allowedTools,
   )
 
   const canUseTool: CanUseToolFn = async (
