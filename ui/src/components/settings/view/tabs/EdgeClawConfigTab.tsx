@@ -8,8 +8,10 @@ import {
   FolderOpen,
   Info,
   LayoutList,
+  Plus,
   RefreshCw,
   Save,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
@@ -76,17 +78,19 @@ type EdgeClawConfig = {
       projects?: Record<string, { enabled?: boolean }>;
     };
   };
+  customEnv?: Record<string, string>;
   memory?: { enabled?: boolean; model?: string; params?: Record<string, unknown> };
   router?: { enabled?: boolean } & Record<string, unknown>;
   gateway?: { enabled?: boolean; home?: string } & Record<string, unknown>;
 };
 
-type SectionId = 'runtime' | 'models' | 'agents' | 'alwaysOn' | 'memory' | 'router' | 'gateway';
+type SectionId = 'runtime' | 'models' | 'agents' | 'customEnv' | 'alwaysOn' | 'memory' | 'router' | 'gateway';
 
 const SECTIONS: Array<{ id: SectionId; labelKey: string; descriptionKey: string }> = [
   { id: 'runtime', labelKey: 'runtime',  descriptionKey: 'runtime' },
   { id: 'models',  labelKey: 'models',   descriptionKey: 'models' },
   { id: 'agents',  labelKey: 'agents',   descriptionKey: 'agents' },
+  { id: 'customEnv', labelKey: 'customEnv', descriptionKey: 'customEnv' },
   { id: 'alwaysOn', labelKey: 'alwaysOn', descriptionKey: 'alwaysOn' },
   { id: 'memory',  labelKey: 'memory',   descriptionKey: 'memory' },
   { id: 'router',  labelKey: 'router',   descriptionKey: 'router' },
@@ -556,6 +560,138 @@ function AgentsSection({ config, onChange }: { config: EdgeClawConfig; onChange:
   );
 }
 
+const WELL_KNOWN_ENV_KEYS = [
+  { key: 'TAVILY_API_KEY', hint: 'Tavily web search API key' },
+  { key: 'FIRECRAWL_API_KEY', hint: 'Firecrawl web scraping API key' },
+  { key: 'SERPER_API_KEY', hint: 'Serper search API key' },
+  { key: 'BROWSERBASE_API_KEY', hint: 'Browserbase API key' },
+];
+
+function CustomEnvSection({ config, onChange }: { config: EdgeClawConfig; onChange: (next: EdgeClawConfig) => void }) {
+  const envMap = config.customEnv ?? {};
+  const entries = Object.entries(envMap);
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+
+  const setEnv = (key: string, value: string) => {
+    onChange(patch(config, ['customEnv', key], value));
+  };
+  const removeEnv = (key: string) => {
+    const next = { ...envMap };
+    delete next[key];
+    onChange(patch(config, ['customEnv'], next));
+  };
+  const addEntry = () => {
+    const key = newKey.trim();
+    if (!key) return;
+    onChange(patch(config, ['customEnv', key], newValue));
+    setNewKey('');
+    setNewValue('');
+  };
+  const addWellKnown = (key: string) => {
+    if (envMap[key] !== undefined) return;
+    onChange(patch(config, ['customEnv', key], ''));
+  };
+
+  const unusedWellKnown = WELL_KNOWN_ENV_KEYS.filter((wk) => envMap[wk.key] === undefined);
+
+  return (
+    <SettingsSection
+      title="Environment Variables"
+      description="Custom env vars injected into every agent session. Persisted in config.yaml — no need to reconfigure after switching sessions."
+    >
+      <SettingsCard className="space-y-3 p-4">
+        {entries.length === 0 && (
+          <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+            No custom environment variables configured.
+          </div>
+        )}
+        {entries.map(([key, value]) => {
+          const isMasked = value === MASK;
+          return (
+            <div key={key} className="space-y-1">
+              <div className="flex items-center gap-2">
+                <input
+                  value={key}
+                  readOnly
+                  className="w-[200px] shrink-0 rounded-md border border-border bg-muted px-2 py-1.5 font-mono text-xs text-foreground outline-none"
+                />
+                <span className="text-muted-foreground">=</span>
+                <TextInput
+                  type="password"
+                  value={value}
+                  placeholder={isMasked ? 'Existing value kept — type to replace' : 'value'}
+                  monospace
+                  onChange={(v) => setEnv(key, v)}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeEnv(key)}
+                  className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  title="Remove"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {isMasked && (
+                <div className="ml-[216px] flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Info className="h-3 w-3" />
+                  Value hidden; leave as-is to keep, retype to replace.
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div className="border-t border-border pt-3">
+          <div className="mb-2 text-xs font-medium text-foreground">Add variable</div>
+          <div className="flex items-center gap-2">
+            <input
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
+              placeholder="KEY_NAME"
+              className="w-[200px] shrink-0 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+            />
+            <span className="text-muted-foreground">=</span>
+            <input
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              placeholder="value"
+              type="password"
+              className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+              onKeyDown={(e) => { if (e.key === 'Enter') addEntry(); }}
+            />
+            <Button variant="outline" size="sm" onClick={addEntry} disabled={!newKey.trim()}>
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Add
+            </Button>
+          </div>
+        </div>
+
+        {unusedWellKnown.length > 0 && (
+          <div className="border-t border-border pt-3">
+            <div className="mb-2 text-xs text-muted-foreground">Quick add common keys:</div>
+            <div className="flex flex-wrap gap-1.5">
+              {unusedWellKnown.map((wk) => (
+                <button
+                  key={wk.key}
+                  type="button"
+                  onClick={() => addWellKnown(wk.key)}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
+                  title={wk.hint}
+                >
+                  <Plus className="h-3 w-3" />
+                  {wk.key}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
 function AlwaysOnSection({
   config,
   projects,
@@ -963,6 +1099,7 @@ export default function EdgeClawConfigTab({ projects = [] }: { projects?: Settin
                 {activeSection === 'runtime' && <RuntimeSection config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'models'  && <ModelsSection  config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'agents'  && <AgentsSection  config={parsedConfig} onChange={onFormChange} />}
+                {activeSection === 'customEnv' && <CustomEnvSection config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'alwaysOn' && <AlwaysOnSection config={parsedConfig} projects={projects} onChange={onFormChange} />}
                 {activeSection === 'memory'  && <MemorySection  config={parsedConfig} onChange={onFormChange} />}
                 {activeSection === 'router'  && <RouterSection  config={parsedConfig} onChange={onFormChange} />}

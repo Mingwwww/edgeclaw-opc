@@ -496,6 +496,10 @@
         "label": "记忆",
         "description": "EdgeClaw 记忆服务"
       },
+      "customEnv": {
+        "label": "环境变量",
+        "description": "跨会话持久化的自定义环境变量"
+      },
       "router": {
         "label": "路由",
         "description": "Claude Code Router（CCR）"

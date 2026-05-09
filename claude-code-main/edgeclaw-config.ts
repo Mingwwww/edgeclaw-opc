@@ -236,6 +236,7 @@ export function buildRuntimeEnvFromConfig(config: EdgeClawConfig): Record<string
     GATEWAY_ENABLED: config.gateway?.enabled ? '1' : '0',
     GATEWAY_HOME: expandTilde(config.gateway?.home),
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxyPort}`,
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(config.runtime?.contextWindow ?? 160000),
   }
   if (main) {
     env.EDGECLAW_API_BASE_URL = main.provider.baseUrl ?? ''

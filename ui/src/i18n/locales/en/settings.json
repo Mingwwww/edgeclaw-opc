@@ -496,6 +496,10 @@
         "label": "Memory",
         "description": "EdgeClaw memory service"
       },
+      "customEnv": {
+        "label": "Env Vars",
+        "description": "Custom environment variables for sessions"
+      },
       "router": {
         "label": "Router",
         "description": "Claude Code Router (CCR)"

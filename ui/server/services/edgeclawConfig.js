@@ -299,6 +299,7 @@ export function buildDefaultEdgeClawConfig() {
       rewriteSystemPrompt: '',
       customRouterPath: '',
     },
+    customEnv: {},
     gateway: {
       enabled: false,
       home: path.join(os.homedir(), '.edgeclaw', 'gateway'),
@@ -370,6 +371,20 @@ export function normalizeEdgeClawConfig(input) {
     delete normalized.agents.alwaysOn;
   }
   delete normalized.compat;
+
+  // customEnv must be a flat string→string map; drop anything else.
+  if (isRecord(raw.customEnv)) {
+    const cleaned = {};
+    for (const [k, v] of Object.entries(raw.customEnv)) {
+      if (typeof v === 'string' || typeof v === 'number') {
+        cleaned[k] = String(v);
+      }
+    }
+    normalized.customEnv = cleaned;
+  } else {
+    normalized.customEnv = {};
+  }
+
   return normalized;
 }
 
@@ -591,6 +606,16 @@ export function buildRuntimeEnv(config) {
   const tavilyKey = mainParams.tavilyApiKey ?? mainParams.tavily_api_key ?? process.env.TAVILY_API_KEY;
   if (tavilyKey) {
     env.TAVILY_API_KEY = String(tavilyKey);
+  }
+
+  // customEnv: user-defined env vars that persist across all sessions.
+  // Applied last (before memory) so they can override built-in defaults
+  // like TAVILY_API_KEY when set in both places.
+  const customEnv = normalized.customEnv ?? {};
+  for (const [key, value] of Object.entries(customEnv)) {
+    if (typeof value === 'string' && value.trim()) {
+      env[key] = value.trim();
+    }
   }
 
   const memory = resolveModel(normalized, normalized.memory.model, { allowMissing: true });
