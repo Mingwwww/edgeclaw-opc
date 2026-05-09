@@ -72,14 +72,13 @@ async function buildClaudeSubprocessEnv() {
     delete env.CLAUDE_CODE_OAUTH_TOKEN;
   }
 
-  // Lazy-start Chrome on first subprocess that needs CDP
-  try {
-    const { ensureCDPUrl } = await import('./utils/globalChrome.js');
-    const cdpUrl = await ensureCDPUrl();
-    if (cdpUrl) {
-      env.CDP_URL = cdpUrl;
-    }
-  } catch { /* Chrome unavailable — proceed without CDP */ }
+  // Chrome CDP is started on-demand by browser-use inside claude-code-main.
+  // Do NOT eagerly launch Chrome here — it causes a browser window to pop up
+  // on every message, even when the agent doesn't need a browser.
+  // If CDP_URL is already set (e.g. by a previous browser-use session), pass it through.
+  if (process.env.CDP_URL) {
+    env.CDP_URL = process.env.CDP_URL;
+  }
 
   return env;
 }

@@ -17,6 +17,9 @@ export const INTERNAL_CONTENT_PREFIXES = Object.freeze([
   'Caveat:',
   'This session is being continued from a previous',
   '[Request interrupted',
+  'Always-On execution for project',
+  'Always-On discovery planning for project',
+  'Always-On 主动发现规划',
 ]);
 
 /**
