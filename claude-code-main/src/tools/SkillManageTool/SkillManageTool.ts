@@ -11,7 +11,7 @@
  */
 
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import {
@@ -134,6 +134,16 @@ type OutputSchema = ReturnType<typeof outputSchema>
 export type Input = z.infer<InputSchema>
 export type Output = z.infer<OutputSchema>
 
+const GENERAL_CWD_SUFFIXES = [
+  `${sep}Claude${sep}general`,
+  `${sep}.claude-gateway${sep}general`,
+]
+
+function isGeneralChatCwd(): boolean {
+  const cwd = resolve(getCwd())
+  return GENERAL_CWD_SUFFIXES.some(suffix => cwd.endsWith(suffix))
+}
+
 const defaultSkillsDirResolver: SkillsDirResolver = scope =>
   scope === 'project'
     ? join(getCwd(), '.claude', 'skills')
@@ -199,13 +209,16 @@ export const SkillManageTool = buildTool({
       }
     }
 
-    const scope: SkillScope = input.scope ?? 'user'
+    const scope: SkillScope =
+      input.scope === 'project' && isGeneralChatCwd()
+        ? 'user'
+        : (input.scope ?? 'user')
     const root = defaultSkillsDirResolver(scope)
     if (
       resolve(root).startsWith(resolve(homedir())) ||
       resolve(root).startsWith(resolve(getCwd()))
     ) {
-      return { behavior: 'allow', updatedInput: input }
+      return { behavior: 'allow', updatedInput: { ...input, scope } }
     }
     return {
       behavior: 'ask',
@@ -213,9 +226,14 @@ export const SkillManageTool = buildTool({
     }
   },
   async call(input: Input): Promise<{ data: Output }> {
+    const effectiveScope: SkillScope | undefined =
+      input.action === 'create' && input.scope === 'project' && isGeneralChatCwd()
+        ? 'user'
+        : input.scope
+
     const actionInput: ActionInput = {
       name: input.name,
-      scope: input.scope,
+      scope: effectiveScope,
       category: input.category,
       content: input.content,
       old_string: input.old_string,

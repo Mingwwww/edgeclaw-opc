@@ -26,6 +26,8 @@ Do NOT use this tool for one-off tasks, trivial instructions, or for data that b
 
 Pick based on the skill's reusability: repo-specific workflow → project, personal workflow → user.
 
+**IMPORTANT**: In general chat (no real project context), ALWAYS use \`scope: "user"\`. Project scope is only valid inside a real project directory. If you're unsure, default to \`scope: "user"\`.
+
 ## SKILL.md format (create / edit)
 
 Must start with YAML frontmatter:
@@ -63,8 +65,9 @@ After a successful mutation, the skill cache is cleared automatically so \`${SKI
 
 ## Do NOT
 
-- Write to skill directories with \`Write\`/\`Edit\` — use this tool so validation and cache invalidation run.
+- Write to skill directories with \`Write\`/\`Edit\` — use this tool so validation and cache invalidation run. Skills created via raw file writes will NOT appear in the skills panel until the next session.
 - Create a skill for a trivial, one-off instruction.
+- Use \`scope: "project"\` in a general chat context (no project open) — the skill will be invisible to the UI.
 - Leave a skill you found to be buggy unpatched after a successful recovery. Patch it in the same turn.
 `
 }
